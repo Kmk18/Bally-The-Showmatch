@@ -1,0 +1,75 @@
+#pragma once
+
+#include <vector>
+#include <string>
+#include <memory>
+#include "Vector2.h"
+#include "Renderer.h"
+
+class Player;
+class Renderer;
+
+enum class SkillType {
+    SPLIT_THROW = 0,
+    ENHANCED_DAMAGE,
+    ENHANCED_EXPLOSIVE,
+    TELEPORT,
+    COUNT
+};
+
+class UI {
+public:
+    UI(Renderer* renderer);
+    ~UI();
+
+    void Update(float deltaTime);
+    void Render(const std::vector<std::unique_ptr<Player>>& players,
+        int currentPlayerIndex, float turnTimer,
+        const Vector2& mousePosition);
+
+    void ShowMessage(const std::string& message, float duration = 3.0f);
+    void ShowGameOver(int winnerId);
+    void ClearMessages();
+
+    void SetTurnTimer(float timer) { m_turnTimer = timer; }
+    void SetCurrentPlayer(int playerIndex) { m_currentPlayerIndex = playerIndex; }
+
+private:
+    Renderer* m_renderer;
+    float m_turnTimer;
+    int m_currentPlayerIndex;
+
+    // Message system
+    struct Message {
+        std::string text;
+        float remainingTime;
+        Color color;
+    };
+    std::vector<Message> m_messages;
+
+    // UI Elements
+    void DrawHUD(const std::vector<std::unique_ptr<Player>>& players);
+    void DrawPlayerInfo(const Player& player, int index, const Vector2& position);
+    void DrawTurnTimer(float timer);
+    void DrawCurrentPlayerIndicator(int playerIndex);
+    void DrawAimingUI(const Player& player, const Vector2& mousePosition);
+    void DrawPowerIndicator(const Vector2& position, float power, float maxPower);
+    void DrawAngleIndicator(const Vector2& position, float angle, float length);
+    void DrawMessages();
+    void DrawGameOverScreen(int winnerId);
+
+    // Skill UI
+    void DrawSkillOrbs(const std::vector<std::unique_ptr<class SkillOrb>>& skillOrbs);
+    void DrawPlayerSkills(const Player& player, const Vector2& position);
+    std::string GetSkillName(SkillType skillType) const;
+    Color GetSkillColor(SkillType skillType) const;
+
+    // Constants
+    static constexpr float MESSAGE_DURATION = 3.0f;
+    static constexpr float HEALTH_BAR_WIDTH = 120.0f;
+    static constexpr float HEALTH_BAR_HEIGHT = 15.0f;
+    static constexpr float POWER_INDICATOR_LENGTH = 100.0f;
+    static constexpr float ANGLE_INDICATOR_LENGTH = 80.0f;
+    static constexpr float TURN_TIMER_WIDTH = 200.0f;
+    static constexpr float TURN_TIMER_HEIGHT = 20.0f;
+};
