@@ -53,7 +53,6 @@ bool Game::Initialize() {
 void Game::CreatePlayers() {
     m_players.clear();
 
-    // Define player colors
     std::vector<Color> playerColors = {
         Color(255, 100, 100, 255), // Red
         Color(100, 100, 255, 255), // Blue
@@ -81,33 +80,15 @@ void Game::CreatePlayers() {
 }
 
 void Game::SetupPlayerInputs() {
-    // Player 1: Arrow keys
-    m_inputManager->SetKeyMapping(0, InputManager::PlayerInput::MOVE_LEFT, SDL_SCANCODE_LEFT);
-    m_inputManager->SetKeyMapping(0, InputManager::PlayerInput::MOVE_RIGHT, SDL_SCANCODE_RIGHT);
-    m_inputManager->SetKeyMapping(0, InputManager::PlayerInput::AIM_UP, SDL_SCANCODE_UP);
-    m_inputManager->SetKeyMapping(0, InputManager::PlayerInput::AIM_DOWN, SDL_SCANCODE_DOWN);
-    m_inputManager->SetKeyMapping(0, InputManager::PlayerInput::ADJUST_POWER, SDL_SCANCODE_SPACE);
-
-    // Player 2: WASD
-    m_inputManager->SetKeyMapping(1, InputManager::PlayerInput::MOVE_LEFT, SDL_SCANCODE_A);
-    m_inputManager->SetKeyMapping(1, InputManager::PlayerInput::MOVE_RIGHT, SDL_SCANCODE_D);
-    m_inputManager->SetKeyMapping(1, InputManager::PlayerInput::AIM_UP, SDL_SCANCODE_W);
-    m_inputManager->SetKeyMapping(1, InputManager::PlayerInput::AIM_DOWN, SDL_SCANCODE_S);
-    m_inputManager->SetKeyMapping(1, InputManager::PlayerInput::ADJUST_POWER, SDL_SCANCODE_LSHIFT);
-
-    // Player 3: IJKL
-    m_inputManager->SetKeyMapping(2, InputManager::PlayerInput::MOVE_LEFT, SDL_SCANCODE_J);
-    m_inputManager->SetKeyMapping(2, InputManager::PlayerInput::MOVE_RIGHT, SDL_SCANCODE_L);
-    m_inputManager->SetKeyMapping(2, InputManager::PlayerInput::AIM_UP, SDL_SCANCODE_I);
-    m_inputManager->SetKeyMapping(2, InputManager::PlayerInput::AIM_DOWN, SDL_SCANCODE_K);
-    m_inputManager->SetKeyMapping(2, InputManager::PlayerInput::ADJUST_POWER, SDL_SCANCODE_U);
-
-    // Player 4: Numpad
-    m_inputManager->SetKeyMapping(3, InputManager::PlayerInput::MOVE_LEFT, SDL_SCANCODE_KP_4);
-    m_inputManager->SetKeyMapping(3, InputManager::PlayerInput::MOVE_RIGHT, SDL_SCANCODE_KP_6);
-    m_inputManager->SetKeyMapping(3, InputManager::PlayerInput::AIM_UP, SDL_SCANCODE_KP_8);
-    m_inputManager->SetKeyMapping(3, InputManager::PlayerInput::AIM_DOWN, SDL_SCANCODE_KP_2);
-    m_inputManager->SetKeyMapping(3, InputManager::PlayerInput::ADJUST_POWER, SDL_SCANCODE_KP_0);
+    // All players use the same keybinds (Arrow keys + Space) since it's turn-based
+    // No need for different keys as only one player moves at a time
+    for (int i = 0; i < m_numPlayers; ++i) {
+        m_inputManager->SetKeyMapping(i, InputManager::PlayerInput::MOVE_LEFT, SDL_SCANCODE_LEFT);
+        m_inputManager->SetKeyMapping(i, InputManager::PlayerInput::MOVE_RIGHT, SDL_SCANCODE_RIGHT);
+        m_inputManager->SetKeyMapping(i, InputManager::PlayerInput::AIM_UP, SDL_SCANCODE_UP);
+        m_inputManager->SetKeyMapping(i, InputManager::PlayerInput::AIM_DOWN, SDL_SCANCODE_DOWN);
+        m_inputManager->SetKeyMapping(i, InputManager::PlayerInput::ADJUST_POWER, SDL_SCANCODE_SPACE);
+    }
 }
 
 void Game::Run() {
@@ -116,14 +97,13 @@ void Game::Run() {
         float deltaTime = currentTime - m_lastFrameTime;
         m_lastFrameTime = currentTime;
 
-        // Cap delta time to prevent large jumps
         deltaTime = std::min(deltaTime, 1.0f / 30.0f);
 
         HandleEvents();
         Update(deltaTime);
         Render();
 
-        SDL_Delay(16); // ~60 FPS
+        SDL_Delay(16);
     }
 }
 
@@ -146,6 +126,9 @@ void Game::Update(float deltaTime) {
         // Update physics
         m_physics->Update(deltaTime);
 
+        // Check collisions
+        m_physics->CheckCollisions(m_players, m_skillOrbs);
+
         // Update players
         for (auto& player : m_players) {
             player->Update(deltaTime);
@@ -162,6 +145,26 @@ void Game::Update(float deltaTime) {
         // Process current player input
         if (m_gameStarted && !m_gameEnded && m_currentPlayerIndex < m_players.size()) {
             ProcessCurrentPlayerInput();
+
+            // Handle throw action: spawn projectile and advance turn
+            Player* currentPlayer = m_players[m_currentPlayerIndex].get();
+            if (currentPlayer->GetState() == PlayerState::THROWING) {
+                const float radians = currentPlayer->GetAngle() * (3.14159265358979323846f / 180.0f);
+                const float powerRatio = currentPlayer->GetPower() / 100.0f;
+                Vector2 velocity(std::cos(radians), std::sin(radians));
+                if (!currentPlayer->IsFacingRight()) {
+                    velocity.x = -velocity.x;
+                }
+                velocity = velocity * (powerRatio * 800.0f);
+
+                Vector2 spawnPos = currentPlayer->GetPosition();
+                m_physics->AddProjectile(std::make_unique<Projectile>(spawnPos, velocity, ProjectileType::NORMAL, currentPlayer->GetId()));
+
+                currentPlayer->SetPower(0.0f);
+                currentPlayer->SetState(PlayerState::IDLE);
+                // End turn after throwing
+                m_turnTimer = 0.0f;
+            }
         }
 
         // Process turn
@@ -180,7 +183,18 @@ void Game::Update(float deltaTime) {
 void Game::ProcessCurrentPlayerInput() {
     Player* currentPlayer = m_players[m_currentPlayerIndex].get();
 
-    // Handle player input
+    // Check if space key (ADJUST_POWER) was just released to shoot
+    if (currentPlayer->GetState() == PlayerState::AIMING) {
+        bool spaceReleased = m_inputManager->IsPlayerInputJustReleased(
+            m_currentPlayerIndex, InputManager::PlayerInput::ADJUST_POWER);
+
+        if (spaceReleased && currentPlayer->GetPower() > 0.0f) {
+            // Player released space, trigger shot
+            currentPlayer->SetState(PlayerState::THROWING);
+        }
+    }
+
+    // Process continuous input
     for (int input = 0; input < static_cast<int>(InputManager::PlayerInput::NONE); ++input) {
         InputManager::PlayerInput playerInput = static_cast<InputManager::PlayerInput>(input);
         bool pressed = m_inputManager->IsPlayerInputPressed(m_currentPlayerIndex, playerInput);
@@ -191,13 +205,17 @@ void Game::ProcessCurrentPlayerInput() {
 void Game::ProcessTurn() {
     if (!m_gameStarted) {
         m_gameStarted = true;
+        m_turnTimer = TURN_DURATION;
+        if (m_currentPlayerIndex < m_players.size()) {
+            m_players[m_currentPlayerIndex]->StartTurn();
+        }
         m_ui->ShowMessage("Game Started! Player " + std::to_string(m_currentPlayerIndex + 1) + "'s turn");
         return;
     }
 
     if (m_gameEnded) return;
 
-    m_turnTimer -= 1.0f / 60.0f; // Assuming 60 FPS
+    m_turnTimer -= 1.0f / 60.0f;
 
     if (m_turnTimer <= 0.0f) {
         // End current player's turn
@@ -320,6 +338,9 @@ void Game::Render() {
         for (const auto& orb : m_skillOrbs) {
             orb->Draw(m_renderer.get());
         }
+
+        // Draw projectiles
+        m_physics->Draw(m_renderer.get());
 
         // Draw players
         for (const auto& player : m_players) {

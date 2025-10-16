@@ -4,7 +4,6 @@
 #include <cmath>
 #include <algorithm>
 
-// Define M_PI if not defined
 #ifndef M_PI
 #define M_PI 3.14159265358979323846
 #endif
@@ -44,7 +43,6 @@ bool Renderer::Initialize() {
         return false;
     }
 
-    // Attempt to load a reasonable default font on Windows so text renders out of the box
     if (!m_font) {
         const char* candidateFonts[] = {
             "C:\\Windows\\Fonts\\segoeui.ttf",
@@ -84,7 +82,6 @@ void Renderer::DrawCircle(const Vector2& center, float radius, const Color& colo
     int centerY = static_cast<int>(center.y);
     int r = static_cast<int>(radius);
 
-    // Draw filled circle using midpoint circle algorithm
     for (int y = -r; y <= r; ++y) {
         for (int x = -r; x <= r; ++x) {
             if (x * x + y * y <= r * r) {

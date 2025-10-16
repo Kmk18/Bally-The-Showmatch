@@ -13,7 +13,7 @@ Player::Player(int id, const Vector2& position, const Color& color)
     : m_id(id), m_position(position), m_velocity(Vector2::Zero()), m_angle(-45.0f), m_power(0.0f),
     m_state(PlayerState::IDLE), m_health(DEFAULT_HEALTH), m_maxHealth(DEFAULT_HEALTH),
     m_mass(DEFAULT_MASS), m_radius(DEFAULT_RADIUS), m_acceleration(Vector2::Zero()),
-    m_color(color), m_leftPressed(false), m_rightPressed(false),
+    m_color(color), m_facingRight(true), m_leftPressed(false), m_rightPressed(false),
     m_upPressed(false), m_downPressed(false), m_spacePressed(false) {
 }
 
@@ -24,7 +24,7 @@ void Player::Update(float deltaTime) {
 
     // Update input states
     if (m_state == PlayerState::AIMING) {
-        // Handle power adjustment
+        // Handle power adjustment (while space is held)
         if (m_spacePressed) {
             m_power += POWER_SPEED * deltaTime;
             if (m_power > MAX_POWER) {
@@ -41,9 +41,15 @@ void Player::HandleInput(int input, bool pressed) {
     switch (playerInput) {
     case InputManager::PlayerInput::MOVE_LEFT:
         m_leftPressed = pressed;
+        if (pressed) {
+            m_facingRight = false;
+        }
         break;
     case InputManager::PlayerInput::MOVE_RIGHT:
         m_rightPressed = pressed;
+        if (pressed) {
+            m_facingRight = true;
+        }
         break;
     case InputManager::PlayerInput::AIM_UP:
         m_upPressed = pressed;
@@ -55,10 +61,7 @@ void Player::HandleInput(int input, bool pressed) {
         m_spacePressed = pressed;
         break;
     case InputManager::PlayerInput::THROW:
-        if (pressed && m_state == PlayerState::AIMING) {
-            // Throw projectile (handled by Game class)
-            m_state = PlayerState::THROWING;
-        }
+        // THROW input is now handled in Game.cpp via space key release
         break;
     default:
         break;

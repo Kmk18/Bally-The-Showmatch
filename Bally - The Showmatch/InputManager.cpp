@@ -122,6 +122,38 @@ bool InputManager::IsPlayerInputPressed(int playerId, PlayerInput input) const {
     return IsKeyPressed(key);
 }
 
+bool InputManager::IsPlayerInputJustReleased(int playerId, PlayerInput input) {
+    auto it = m_playerMappings.find(playerId);
+    if (it == m_playerMappings.end()) {
+        return false;
+    }
+
+    const PlayerKeyMappings& mappings = it->second;
+    SDL_Scancode key = SDL_SCANCODE_UNKNOWN;
+
+    switch (input) {
+    case PlayerInput::MOVE_LEFT:
+        key = mappings.moveLeft;
+        break;
+    case PlayerInput::MOVE_RIGHT:
+        key = mappings.moveRight;
+        break;
+    case PlayerInput::AIM_UP:
+        key = mappings.aimUp;
+        break;
+    case PlayerInput::AIM_DOWN:
+        key = mappings.aimDown;
+        break;
+    case PlayerInput::ADJUST_POWER:
+        key = mappings.adjustPower;
+        break;
+    default:
+        return false;
+    }
+
+    return IsKeyJustReleased(key);
+}
+
 void InputManager::SetKeyMapping(int playerId, PlayerInput input, SDL_Scancode key) {
     PlayerKeyMappings& mappings = m_playerMappings[playerId];
 

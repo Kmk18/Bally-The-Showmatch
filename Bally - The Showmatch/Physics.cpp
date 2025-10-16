@@ -137,6 +137,15 @@ void Physics::Update(float deltaTime) {
     );
 }
 
+void Physics::Draw(class Renderer* renderer) {
+    // Draw all active projectiles
+    for (const auto& projectile : m_projectiles) {
+        if (projectile->IsActive()) {
+            projectile->Draw(renderer);
+        }
+    }
+}
+
 void Physics::AddProjectile(std::unique_ptr<Projectile> projectile) {
     m_projectiles.push_back(std::move(projectile));
 }

@@ -69,6 +69,7 @@ public:
     ~Physics();
 
     void Update(float deltaTime);
+    void Draw(class Renderer* renderer);
     void AddProjectile(std::unique_ptr<Projectile> projectile);
     void RemoveProjectile(Projectile* projectile);
 

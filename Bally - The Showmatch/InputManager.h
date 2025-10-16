@@ -26,6 +26,7 @@ public:
 
     PlayerInput GetPlayerInput(int playerId, SDL_Scancode key) const;
     bool IsPlayerInputPressed(int playerId, PlayerInput input) const;
+    bool IsPlayerInputJustReleased(int playerId, PlayerInput input);
 
     void SetKeyMapping(int playerId, PlayerInput input, SDL_Scancode key);
 
@@ -47,6 +48,9 @@ private:
     };
 
     std::unordered_map<int, PlayerKeyMappings> m_playerMappings;
+
+    // Global mapping used for all players (defaults to arrow keys + space)
+    PlayerKeyMappings m_globalMappings;
 
     // Mouse state
     Vector2 m_mousePosition;

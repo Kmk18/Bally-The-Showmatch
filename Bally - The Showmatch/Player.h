@@ -32,6 +32,7 @@ public:
     float GetPower() const { return m_power; }
     float GetRadius() const { return m_radius; }
     bool IsAlive() const { return m_health > 0; }
+    bool IsFacingRight() const { return m_facingRight; }
 
     // Setters
     void SetPosition(const Vector2& position) { m_position = position; }
@@ -39,6 +40,7 @@ public:
     void SetState(PlayerState state) { m_state = state; }
     void SetAngle(float angle) { m_angle = angle; }
     void SetPower(float power) { m_power = power; }
+    void SetFacingRight(bool facingRight) { m_facingRight = facingRight; }
 
     // Physics
     void ApplyForce(const Vector2& force);
@@ -73,6 +75,7 @@ private:
 
     // Visual
     Color m_color;
+    bool m_facingRight;
 
     // Skills
     std::vector<int> m_availableSkills;

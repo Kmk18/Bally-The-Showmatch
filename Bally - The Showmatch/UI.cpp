@@ -143,7 +143,11 @@ void UI::DrawAimingUI(const Player& player, const Vector2& mousePosition) {
     Vector2 playerPos = player.GetPosition();
 
     // Draw angle indicator
-    DrawAngleIndicator(playerPos, player.GetAngle(), ANGLE_INDICATOR_LENGTH);
+    float displayAngle = player.GetAngle();
+    if (!player.IsFacingRight()) {
+        displayAngle = 180.0f - displayAngle;
+    }
+    DrawAngleIndicator(playerPos, displayAngle, ANGLE_INDICATOR_LENGTH);
 
     // Draw power indicator
     Vector2 powerIndicatorPos = playerPos + Vector2(0, -60);
@@ -153,6 +157,9 @@ void UI::DrawAimingUI(const Player& player, const Vector2& mousePosition) {
     float radians = player.GetAngle() * M_PI / 180.0f;
     float powerRatio = player.GetPower() / 100.0f;
     Vector2 velocity = Vector2(std::cos(radians), std::sin(radians)) * (powerRatio * 800.0f);
+    if (!player.IsFacingRight()) {
+        velocity.x = -velocity.x;
+    }
 
     m_renderer->DrawProjectileTrajectory(playerPos, velocity, 980.0f, 60);
 
