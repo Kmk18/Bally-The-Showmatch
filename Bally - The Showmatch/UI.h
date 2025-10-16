@@ -68,7 +68,7 @@ private:
     static constexpr float MESSAGE_DURATION = 3.0f;
     static constexpr float HEALTH_BAR_WIDTH = 120.0f;
     static constexpr float HEALTH_BAR_HEIGHT = 15.0f;
-    static constexpr float POWER_INDICATOR_LENGTH = 100.0f;
+    static constexpr float POWER_INDICATOR_LENGTH = 200.0f;
     static constexpr float ANGLE_INDICATOR_LENGTH = 80.0f;
     static constexpr float TURN_TIMER_WIDTH = 200.0f;
     static constexpr float TURN_TIMER_HEIGHT = 20.0f;

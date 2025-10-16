@@ -10,10 +10,12 @@ enum class GameState {
     MAIN_MENU,
     GAME_MODE_SELECTION,
     PLAYER_COUNT_SELECTION,
+    MAP_SELECTION,
     SETTINGS,
     SOUND_SETTINGS,
     KEYBIND_SETTINGS,
     IN_GAME,
+    PAUSED,
     GAME_OVER
 };
 
@@ -48,7 +50,11 @@ public:
     // Game configuration
     GameMode GetGameMode() const { return m_gameMode; }
     int GetPlayerCount() const { return m_playerCount; }
-    
+    int GetSelectedMapIndex() const { return m_selectedMapIndex; }
+
+    // Map management
+    void SetAvailableMaps(const std::vector<std::string>& mapNames) { m_availableMaps = mapNames; }
+
     // Settings
     float GetMasterVolume() const { return m_masterVolume; }
     float GetSFXVolume() const { return m_sfxVolume; }
@@ -61,9 +67,12 @@ public:
 private:
     Renderer* m_renderer;
     GameState m_currentState;
+    GameState m_previousState;  // Track previous state for back navigation
     GameMode m_gameMode;
     int m_playerCount;
-    
+    int m_selectedMapIndex;
+    std::vector<std::string> m_availableMaps;
+
     // Settings
     float m_masterVolume;
     float m_sfxVolume;
@@ -82,6 +91,8 @@ private:
     void CreateMainMenu();
     void CreateGameModeMenu();
     void CreatePlayerCountMenu();
+    void CreateMapSelectionMenu();
+    void CreatePauseMenu();
     void CreateSettingsMenu();
     void CreateSoundSettingsMenu();
     void CreateKeybindSettingsMenu();

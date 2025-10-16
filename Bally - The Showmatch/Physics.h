@@ -6,6 +6,7 @@
 class Player;
 class Projectile;
 class SkillOrb;
+class Terrain;
 
 struct CollisionInfo {
     bool hasCollision;
@@ -82,12 +83,17 @@ public:
     CollisionInfo CheckCircleCollision(const Vector2& pos1, float radius1,
         const Vector2& pos2, float radius2) const;
     CollisionInfo CheckCirclePlatformCollision(const Vector2& pos, float radius) const;
+    CollisionInfo CheckCircleTerrainCollision(const Vector2& pos, float radius, Terrain* terrain) const;
 
     void ApplyExplosion(const Vector2& center, float radius, float force,
         std::vector<std::unique_ptr<Player>>& players);
 
+    // Set the terrain for collision detection
+    void SetTerrain(Terrain* terrain) { m_terrain = terrain; }
+
 private:
     std::vector<std::unique_ptr<Projectile>> m_projectiles;
+    Terrain* m_terrain; // Reference to terrain for collision detection
 
     // World bounds
     float m_platformWidth;
@@ -97,6 +103,7 @@ private:
     // Collision detection
     void CheckProjectileCollisions(std::vector<std::unique_ptr<Player>>& players,
         std::vector<std::unique_ptr<SkillOrb>>& skillOrbs);
+    void CheckPlayerTerrainCollisions(std::vector<std::unique_ptr<Player>>& players);
     void CheckPlayerPlatformCollisions(std::vector<std::unique_ptr<Player>>& players);
     void CheckSkillOrbCollisions(std::vector<std::unique_ptr<Player>>& players,
         std::vector<std::unique_ptr<SkillOrb>>& skillOrbs);

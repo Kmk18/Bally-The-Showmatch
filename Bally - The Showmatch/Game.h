@@ -10,6 +10,7 @@
 #include "UI.h"
 #include "SkillOrb.h"
 #include "Menu.h"
+#include "Map.h"
 
 // Forward declarations
 class Projectile;
@@ -48,6 +49,10 @@ private:
     std::unique_ptr<Physics> m_physics;
     std::unique_ptr<UI> m_ui;
     std::unique_ptr<Menu> m_menu;
+
+    // Map system
+    std::vector<MapInfo> m_availableMaps;
+    std::unique_ptr<Map> m_currentMap;
 
     // Game state
     GameState m_gameState;

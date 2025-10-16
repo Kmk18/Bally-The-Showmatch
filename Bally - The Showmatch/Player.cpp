@@ -14,7 +14,7 @@ Player::Player(int id, const Vector2& position, const Color& color)
     m_state(PlayerState::IDLE), m_health(DEFAULT_HEALTH), m_maxHealth(DEFAULT_HEALTH),
     m_mass(DEFAULT_MASS), m_radius(DEFAULT_RADIUS), m_acceleration(Vector2::Zero()),
     m_color(color), m_facingRight(true), m_leftPressed(false), m_rightPressed(false),
-    m_upPressed(false), m_downPressed(false), m_spacePressed(false) {
+    m_upPressed(false), m_downPressed(false), m_spacePressed(false), m_powerIncreasing(true) {
 }
 
 void Player::Update(float deltaTime) {
@@ -26,9 +26,18 @@ void Player::Update(float deltaTime) {
     if (m_state == PlayerState::AIMING) {
         // Handle power adjustment (while space is held)
         if (m_spacePressed) {
-            m_power += POWER_SPEED * deltaTime;
-            if (m_power > MAX_POWER) {
-                m_power = 0.0f; // Cycle back to 0
+            if (m_powerIncreasing) {
+                m_power += POWER_SPEED * deltaTime;
+                if (m_power >= MAX_POWER) {
+                    m_power = MAX_POWER;
+                    m_powerIncreasing = false;  // Reverse direction
+                }
+            } else {
+                m_power -= POWER_SPEED * deltaTime;
+                if (m_power <= 0.0f) {
+                    m_power = 0.0f;
+                    m_powerIncreasing = true;  // Reverse direction
+                }
             }
         }
     }

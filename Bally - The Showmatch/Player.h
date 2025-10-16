@@ -86,9 +86,10 @@ private:
     bool m_upPressed;
     bool m_downPressed;
     bool m_spacePressed;
+    bool m_powerIncreasing;  // Track if power is increasing or decreasing
 
     // Constants
-    static constexpr float MOVE_SPEED = 200.0f;
+    static constexpr float MOVE_SPEED = 10.0f;  // Reduced from 200 for slower movement
     static constexpr float ANGLE_SPEED = 90.0f;
     static constexpr float POWER_SPEED = 50.0f;
     static constexpr float MAX_POWER = 100.0f;

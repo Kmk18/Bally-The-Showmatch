@@ -1,6 +1,7 @@
 #include "Physics.h"
 #include "Player.h"
 #include "SkillOrb.h"
+#include "Terrain.h"
 #include <cmath>
 #include <algorithm>
 
@@ -115,7 +116,7 @@ float Projectile::GetExplosionForce() const {
     }
 }
 
-Physics::Physics() : m_platformWidth(PLATFORM_WIDTH), m_platformHeight(PLATFORM_HEIGHT),
+Physics::Physics() : m_terrain(nullptr), m_platformWidth(PLATFORM_WIDTH), m_platformHeight(PLATFORM_HEIGHT),
 m_platformPosition(200.0f, 650.0f) {
 }
 
@@ -161,7 +162,14 @@ void Physics::RemoveProjectile(Projectile* projectile) {
 void Physics::CheckCollisions(std::vector<std::unique_ptr<Player>>& players,
     std::vector<std::unique_ptr<SkillOrb>>& skillOrbs) {
     CheckProjectileCollisions(players, skillOrbs);
-    CheckPlayerPlatformCollisions(players);
+
+    // Use terrain collision if terrain is set, otherwise use platform collision
+    if (m_terrain) {
+        CheckPlayerTerrainCollisions(players);
+    } else {
+        CheckPlayerPlatformCollisions(players);
+    }
+
     CheckSkillOrbCollisions(players, skillOrbs);
 }
 
@@ -170,10 +178,21 @@ void Physics::CheckProjectileCollisions(std::vector<std::unique_ptr<Player>>& pl
     for (auto& projectile : m_projectiles) {
         if (!projectile->IsActive()) continue;
 
-        // Check collision with platform
-        CollisionInfo platformCollision = CheckCirclePlatformCollision(projectile->GetPosition(), projectile->GetRadius());
-        if (platformCollision.hasCollision) {
-            // Handle platform collision
+        // Check collision with terrain or platform
+        bool hitTerrain = false;
+        if (m_terrain) {
+            // Check if projectile hit terrain
+            if (m_terrain->IsCircleSolid(projectile->GetPosition(), projectile->GetRadius())) {
+                hitTerrain = true;
+            }
+        } else {
+            // Fall back to platform collision
+            CollisionInfo platformCollision = CheckCirclePlatformCollision(projectile->GetPosition(), projectile->GetRadius());
+            hitTerrain = platformCollision.hasCollision;
+        }
+
+        if (hitTerrain) {
+            // Handle terrain/platform collision
             if (projectile->GetType() == ProjectileType::TELEPORT) {
                 // Teleport the owner to this location
                 for (auto& player : players) {
@@ -184,9 +203,14 @@ void Physics::CheckProjectileCollisions(std::vector<std::unique_ptr<Player>>& pl
                 }
             }
             else {
-                // Create explosion
+                // Create explosion and destroy terrain
                 ApplyExplosion(projectile->GetPosition(), projectile->GetExplosionRadius(),
                     projectile->GetExplosionForce(), players);
+
+                // Destroy terrain if available
+                if (m_terrain) {
+                    m_terrain->DestroyCircle(projectile->GetPosition(), projectile->GetExplosionRadius());
+                }
             }
 
             projectile->SetActive(false);
@@ -231,11 +255,19 @@ void Physics::CheckPlayerPlatformCollisions(std::vector<std::unique_ptr<Player>>
     for (auto& player : players) {
         if (!player->IsAlive()) continue;
 
-        CollisionInfo collision = CheckCirclePlatformCollision(player->GetPosition(), player->GetRadius());
+        Vector2 pos = player->GetPosition();
+
+        // Check if player fell into the void (below screen)
+        if (pos.y > 850.0f) {  // Screen height is 800, give some buffer
+            player->TakeDamage(player->GetMaxHealth());  // Kill the player
+            continue;
+        }
+
+        CollisionInfo collision = CheckCirclePlatformCollision(pos, player->GetRadius());
         if (collision.hasCollision) {
             // Push player out of platform
             Vector2 correction = collision.normal * collision.penetration;
-            player->SetPosition(player->GetPosition() + correction);
+            player->SetPosition(pos + correction);
 
             // Stop downward velocity
             Vector2 velocity = player->GetVelocity();
@@ -348,4 +380,99 @@ void Physics::ApplyExplosion(const Vector2& center, float radius, float force,
 bool Physics::IsPointInBounds(const Vector2& point, const Vector2& boundsMin, const Vector2& boundsMax) const {
     return point.x >= boundsMin.x && point.x <= boundsMax.x &&
         point.y >= boundsMin.y && point.y <= boundsMax.y;
+}
+
+void Physics::CheckPlayerTerrainCollisions(std::vector<std::unique_ptr<Player>>& players) {
+    if (!m_terrain) return;
+
+    for (auto& player : players) {
+        if (!player->IsAlive()) continue;
+
+        Vector2 pos = player->GetPosition();
+        float radius = player->GetRadius();
+
+        // Check if player fell into the void (below screen)
+        if (pos.y > 850.0f) {  // Screen height is 800, give some buffer
+            player->TakeDamage(player->GetMaxHealth());  // Kill the player
+            continue;
+        }
+
+        // Check if player is overlapping with solid terrain
+        bool onGround = false;
+        Vector2 correction(0, 0);
+
+        // Check bottom of player (feet) - sample multiple points for stability
+        int bottomY = (int)(pos.y + radius);
+
+        // Sample 3 points across the bottom of the player for more stable ground detection
+        int leftX = (int)(pos.x - radius * 0.5f);
+        int centerX = (int)pos.x;
+        int rightX = (int)(pos.x + radius * 0.5f);
+
+        int groundY = -1;
+
+        // Find highest solid pixel among the samples
+        int leftGround = m_terrain->FindTopSolidPixel(leftX, bottomY - (int)radius);
+        int centerGround = m_terrain->FindTopSolidPixel(centerX, bottomY - (int)radius);
+        int rightGround = m_terrain->FindTopSolidPixel(rightX, bottomY - (int)radius);
+
+        // Use the highest ground found
+        if (leftGround >= 0 && (groundY < 0 || leftGround < groundY)) groundY = leftGround;
+        if (centerGround >= 0 && (groundY < 0 || centerGround < groundY)) groundY = centerGround;
+        if (rightGround >= 0 && (groundY < 0 || rightGround < groundY)) groundY = rightGround;
+
+        if (groundY >= 0) {
+            float distanceToGround = groundY - (pos.y + radius);
+
+            // If player is overlapping or very close to ground
+            if (distanceToGround < 3.0f) {
+                onGround = true;
+                // Smooth the correction to prevent jittering
+                correction.y = distanceToGround * 0.5f;  // Smoother adjustment
+            }
+        }
+
+        // Apply horizontal terrain collision (check multiple points around player)
+        for (int angle = 0; angle < 360; angle += 30) {
+            float rad = angle * 3.14159265f / 180.0f;
+            int checkX = (int)(pos.x + std::cos(rad) * radius);
+            int checkY = (int)(pos.y + std::sin(rad) * radius);
+
+            if (m_terrain->IsPixelSolid(checkX, checkY)) {
+                // Push player away from solid pixel
+                Vector2 pushDir(std::cos(rad), std::sin(rad));
+                correction = correction - pushDir * 2.0f;
+            }
+        }
+
+        // Apply correction
+        if (correction.Length() > 0.1f) {
+            player->SetPosition(pos + correction);
+
+            // Stop downward velocity if on ground
+            if (onGround) {
+                Vector2 velocity = player->GetVelocity();
+                if (velocity.y > 0) {
+                    player->SetVelocity(Vector2(velocity.x, 0));
+                }
+            }
+        }
+    }
+}
+
+CollisionInfo Physics::CheckCircleTerrainCollision(const Vector2& pos, float radius, Terrain* terrain) const {
+    CollisionInfo info;
+    info.hasCollision = false;
+
+    if (!terrain) return info;
+
+    // Simple check: if the circle overlaps solid terrain pixels
+    if (terrain->IsCircleSolid(pos, radius)) {
+        info.hasCollision = true;
+        info.point = pos;
+        info.normal = Vector2(0, -1);  // Default push up
+        info.penetration = radius;
+    }
+
+    return info;
 }

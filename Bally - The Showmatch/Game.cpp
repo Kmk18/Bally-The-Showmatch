@@ -18,7 +18,7 @@ Game::~Game() {
 
 bool Game::Initialize() {
     // Initialize SDL
-    if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_EVENTS) < 0) {
+    if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_EVENTS)) {
         std::cerr << "Failed to initialize SDL: " << SDL_GetError() << std::endl;
         return false;
     }
@@ -41,6 +41,19 @@ bool Game::Initialize() {
     m_physics = std::make_unique<Physics>();
     m_ui = std::make_unique<UI>(m_renderer.get());
     m_menu = std::make_unique<Menu>(m_renderer.get());
+
+    // Scan for available maps
+    // Path relative to the project source directory
+    m_availableMaps = Map::ScanAvailableMaps("../maps");
+
+    // Populate menu with map names
+    std::vector<std::string> mapNames;
+    for (const auto& mapInfo : m_availableMaps) {
+        mapNames.push_back(mapInfo.name);
+    }
+    m_menu->SetAvailableMaps(mapNames);
+
+    std::cout << "Found " << m_availableMaps.size() << " maps" << std::endl;
 
     // Set up menu callbacks
     m_menu->SetOnStartGame([this]() { StartGame(); });
@@ -112,12 +125,32 @@ void Game::Update(float deltaTime) {
 
     // Update menu if in menu state
     if (m_gameState == GameState::MAIN_MENU || m_gameState == GameState::GAME_MODE_SELECTION ||
-        m_gameState == GameState::PLAYER_COUNT_SELECTION || m_gameState == GameState::SETTINGS ||
-        m_gameState == GameState::SOUND_SETTINGS || m_gameState == GameState::KEYBIND_SETTINGS) {
+        m_gameState == GameState::PLAYER_COUNT_SELECTION || m_gameState == GameState::MAP_SELECTION ||
+        m_gameState == GameState::SETTINGS ||
+        m_gameState == GameState::SOUND_SETTINGS || m_gameState == GameState::KEYBIND_SETTINGS ||
+        m_gameState == GameState::PAUSED) {
         // Get mouse position and click state for menu
         Vector2 mousePos = m_inputManager->GetMousePosition();
         bool mouseClicked = m_inputManager->IsMouseButtonJustPressed(0); // Left mouse button
         m_menu->Update(deltaTime, mousePos, mouseClicked);
+
+        // Sync game state with menu state (for pause menu navigation)
+        if (m_gameState == GameState::PAUSED) {
+            GameState menuState = m_menu->GetState();
+            if (menuState == GameState::IN_GAME) {
+                // Resume button was clicked
+                m_gameState = GameState::IN_GAME;
+            } else if (menuState == GameState::MAIN_MENU) {
+                // Exit to Main Menu was clicked
+                ReturnToMenu();
+            } else if (menuState == GameState::SETTINGS ||
+                      menuState == GameState::SOUND_SETTINGS ||
+                      menuState == GameState::KEYBIND_SETTINGS) {
+                // Settings navigation from pause menu
+                m_gameState = menuState;
+            }
+            return;
+        }
         return;
     }
 
@@ -297,14 +330,18 @@ void Game::HandleEvents() {
             break;
 
         case SDL_EVENT_KEY_DOWN:
-            if (event.key.key == SDL_SCANCODE_ESCAPE) {
+            if (event.key.scancode == SDL_SCANCODE_ESCAPE) {
                 if (m_gameState == GameState::IN_GAME) {
-                    ReturnToMenu();
-                } else {
-                    m_running = false;
+                    // Pause the game
+                    m_gameState = GameState::PAUSED;
+                    m_menu->SetState(GameState::PAUSED);
+                } else if (m_gameState == GameState::PAUSED) {
+                    // Resume the game
+                    m_gameState = GameState::IN_GAME;
                 }
+                // ESC key no longer closes the game
             }
-            else if (event.key.key == SDL_SCANCODE_R && m_gameEnded) {
+            else if (event.key.scancode == SDL_SCANCODE_R && m_gameEnded) {
                 ResetGame();
             }
             break;
@@ -319,20 +356,29 @@ void Game::HandleEvents() {
 void Game::Render() {
     m_renderer->BeginFrame();
 
-    // Render menu if in menu state
-    if (m_gameState == GameState::MAIN_MENU || m_gameState == GameState::GAME_MODE_SELECTION ||
-        m_gameState == GameState::PLAYER_COUNT_SELECTION || m_gameState == GameState::SETTINGS ||
-        m_gameState == GameState::SOUND_SETTINGS || m_gameState == GameState::KEYBIND_SETTINGS) {
+    // Check if we're in a menu-only state
+    bool isMenuOnlyState = (m_gameState == GameState::MAIN_MENU ||
+                            m_gameState == GameState::GAME_MODE_SELECTION ||
+                            m_gameState == GameState::PLAYER_COUNT_SELECTION ||
+                            m_gameState == GameState::MAP_SELECTION);
+
+    // Render menu-only states (no game background)
+    if (isMenuOnlyState) {
         m_menu->Render();
         m_renderer->EndFrame();
         return;
     }
 
-    // Render game if in game state
-    if (m_gameState == GameState::IN_GAME) {
-        // Draw platform
-        Vector2 platformPos(200.0f, 650.0f);
-        m_renderer->DrawPlatform(platformPos, 800.0f, 50.0f);
+    // Render game with overlays (settings/pause accessed during gameplay)
+    if (m_gameState == GameState::IN_GAME || m_gameState == GameState::PAUSED ||
+        m_gameState == GameState::SETTINGS || m_gameState == GameState::SOUND_SETTINGS ||
+        m_gameState == GameState::KEYBIND_SETTINGS) {
+
+        // Draw map background and terrain (always visible during gameplay)
+        if (m_currentMap) {
+            m_currentMap->DrawBackground(m_renderer.get());
+            m_currentMap->DrawTerrain(m_renderer.get());
+        }
 
         // Draw skill orbs
         for (const auto& orb : m_skillOrbs) {
@@ -356,6 +402,12 @@ void Game::Render() {
 
         // Draw UI
         m_ui->Render(m_players, m_currentPlayerIndex, m_turnTimer, Vector2(0, 0));
+
+        // Draw menu overlay if paused or in settings
+        if (m_gameState == GameState::PAUSED || m_gameState == GameState::SETTINGS ||
+            m_gameState == GameState::SOUND_SETTINGS || m_gameState == GameState::KEYBIND_SETTINGS) {
+            m_menu->Render();
+        }
     }
 
     m_renderer->EndFrame();
@@ -365,21 +417,41 @@ void Game::StartGame() {
     // Get game configuration from menu
     m_gameMode = m_menu->GetGameMode();
     m_numPlayers = m_menu->GetPlayerCount();
-    
+
+    // Load the selected map
+    int mapIndex = m_menu->GetSelectedMapIndex();
+
+    m_currentMap = std::make_unique<Map>();
+
+    if (mapIndex >= 0 && mapIndex < static_cast<int>(m_availableMaps.size())) {
+        // Load selected map
+        if (!m_currentMap->LoadFromFolder(m_availableMaps[mapIndex].folderPath)) {
+            std::cerr << "Failed to load map, using default" << std::endl;
+            m_currentMap->GetTerrain()->CreateDefaultTerrain(1200, 800);
+        }
+    } else {
+        // No map selected or invalid index, use default
+        std::cout << "Using default terrain" << std::endl;
+        m_currentMap->GetTerrain()->CreateDefaultTerrain(1200, 800);
+    }
+
+    // Set terrain in physics system
+    m_physics->SetTerrain(m_currentMap->GetTerrain());
+
     // Create players based on selection
     CreatePlayers();
-    
+
     // Reset game state
     m_currentPlayerIndex = 0;
     m_turnTimer = TURN_DURATION;
     m_gameStarted = false;
     m_gameEnded = false;
     m_winnerId = -1;
-    
+
     // Clear any existing projectiles and skill orbs
     m_skillOrbs.clear();
     m_ui->ClearMessages();
-    
+
     // Switch to game state
     m_gameState = GameState::IN_GAME;
 }

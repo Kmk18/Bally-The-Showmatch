@@ -3,9 +3,10 @@
 #include <cmath>
 #include <iostream>
 
-Menu::Menu(Renderer* renderer) 
-    : m_renderer(renderer), m_currentState(GameState::MAIN_MENU), 
-      m_gameMode(GameMode::FREE_FOR_ALL), m_playerCount(4),
+Menu::Menu(Renderer* renderer)
+    : m_renderer(renderer), m_currentState(GameState::MAIN_MENU),
+      m_previousState(GameState::MAIN_MENU),
+      m_gameMode(GameMode::FREE_FOR_ALL), m_playerCount(4), m_selectedMapIndex(0),
       m_masterVolume(1.0f), m_sfxVolume(1.0f), m_musicVolume(1.0f),
       m_mousePosition(0, 0), m_mouseClicked(false) {
     CreateMainMenu();
@@ -33,9 +34,11 @@ void Menu::Render() {
 }
 
 void Menu::SetState(GameState state) {
+    // Track previous state for back navigation
+    m_previousState = m_currentState;
     m_currentState = state;
     ClearButtons();
-    
+
     switch (state) {
         case GameState::MAIN_MENU:
             CreateMainMenu();
@@ -45,6 +48,12 @@ void Menu::SetState(GameState state) {
             break;
         case GameState::PLAYER_COUNT_SELECTION:
             CreatePlayerCountMenu();
+            break;
+        case GameState::MAP_SELECTION:
+            CreateMapSelectionMenu();
+            break;
+        case GameState::PAUSED:
+            CreatePauseMenu();
             break;
         case GameState::SETTINGS:
             CreateSettingsMenu();
@@ -91,14 +100,14 @@ void Menu::CreateMainMenu() {
 void Menu::CreateGameModeMenu() {
     Vector2 center(600, 400);
     Vector2 startPos = center - Vector2(0, 60);
-    
+
     // Team 2v2 button
     AddButton("Team Mode (2v2)", startPos, Vector2(BUTTON_WIDTH, BUTTON_HEIGHT),
               Color(0, 150, 0, 255), Color(0, 200, 0, 255),
-              [this]() { 
-                  m_gameMode = GameMode::TEAM_2V2; 
+              [this]() {
+                  m_gameMode = GameMode::TEAM_2V2;
                   m_playerCount = 4;
-                  if (m_onStartGame) m_onStartGame();
+                  SetState(GameState::MAP_SELECTION);
               });
     
     // Free for All button
@@ -117,47 +126,118 @@ void Menu::CreateGameModeMenu() {
 void Menu::CreatePlayerCountMenu() {
     Vector2 center(600, 400);
     Vector2 startPos = center - Vector2(0, 90);
-    
+
     // Player count buttons
     for (int i = 1; i <= 4; ++i) {
         std::string buttonText = std::to_string(i) + " Player" + (i > 1 ? "s" : "");
-        AddButton(buttonText, startPos + Vector2(0, (i-1) * BUTTON_SPACING), 
+        AddButton(buttonText, startPos + Vector2(0, (i-1) * BUTTON_SPACING),
                   Vector2(BUTTON_WIDTH, BUTTON_HEIGHT),
                   Color(0, 150, 0, 255), Color(0, 200, 0, 255),
-                  [this, i]() { 
-                      m_gameMode = GameMode::FREE_FOR_ALL; 
+                  [this, i]() {
+                      m_gameMode = GameMode::FREE_FOR_ALL;
                       m_playerCount = i;
-                      if (m_onStartGame) m_onStartGame();
+                      SetState(GameState::MAP_SELECTION);
                   });
     }
-    
+
     // Back button
-    AddButton("Back", startPos + Vector2(0, 4 * BUTTON_SPACING), 
+    AddButton("Back", startPos + Vector2(0, 4 * BUTTON_SPACING),
               Vector2(BUTTON_WIDTH, BUTTON_HEIGHT),
               Color(150, 150, 150, 255), Color(200, 200, 200, 255),
               [this]() { SetState(GameState::GAME_MODE_SELECTION); });
 }
 
+void Menu::CreateMapSelectionMenu() {
+    Vector2 center(600, 400);
+    Vector2 startPos = center - Vector2(0, 120);
+
+    // If no maps available, show error message
+    if (m_availableMaps.empty()) {
+        AddButton("No maps found!", startPos, Vector2(BUTTON_WIDTH, BUTTON_HEIGHT),
+                  Color(200, 0, 0, 255), Color(200, 0, 0, 255),
+                  []() { /* Error */ });
+
+        AddButton("Using default map", startPos + Vector2(0, BUTTON_SPACING), Vector2(BUTTON_WIDTH, BUTTON_HEIGHT),
+                  Color(100, 100, 100, 255), Color(100, 100, 100, 255),
+                  []() { /* Info */ });
+
+        AddButton("Start with Default", startPos + Vector2(0, BUTTON_SPACING * 2), Vector2(BUTTON_WIDTH, BUTTON_HEIGHT),
+                  Color(0, 150, 0, 255), Color(0, 200, 0, 255),
+                  [this]() {
+                      m_selectedMapIndex = -1; // Default map
+                      if (m_onStartGame) m_onStartGame();
+                  });
+    }
+    else {
+        // Display available maps
+        for (size_t i = 0; i < m_availableMaps.size() && i < 5; ++i) {
+            AddButton(m_availableMaps[i], startPos + Vector2(0, i * BUTTON_SPACING),
+                      Vector2(BUTTON_WIDTH, BUTTON_HEIGHT),
+                      Color(0, 150, 0, 255), Color(0, 200, 0, 255),
+                      [this, i]() {
+                          m_selectedMapIndex = static_cast<int>(i);
+                          if (m_onStartGame) m_onStartGame();
+                      });
+        }
+    }
+
+    // Back button
+    float backButtonOffset = m_availableMaps.empty() ? 3.0f : static_cast<float>(std::min(m_availableMaps.size() + 1, static_cast<size_t>(6)));
+    AddButton("Back", startPos + Vector2(0, backButtonOffset * BUTTON_SPACING),
+              Vector2(BUTTON_WIDTH, BUTTON_HEIGHT),
+              Color(150, 150, 150, 255), Color(200, 200, 200, 255),
+              [this]() { SetState(GameState::PLAYER_COUNT_SELECTION); });
+}
+
+void Menu::CreatePauseMenu() {
+    Vector2 center(600, 400);
+    Vector2 startPos = center - Vector2(0, 90);
+
+    // Resume button
+    AddButton("Resume", startPos, Vector2(BUTTON_WIDTH, BUTTON_HEIGHT),
+              Color(0, 150, 0, 255), Color(0, 200, 0, 255),
+              [this]() { SetState(GameState::IN_GAME); });
+
+    // Settings button
+    AddButton("Settings", startPos + Vector2(0, BUTTON_SPACING),
+              Vector2(BUTTON_WIDTH, BUTTON_HEIGHT),
+              Color(0, 100, 200, 255), Color(0, 150, 255, 255),
+              [this]() { SetState(GameState::SETTINGS); });
+
+    // Exit to Main Menu button
+    AddButton("Exit to Main Menu", startPos + Vector2(0, BUTTON_SPACING * 2),
+              Vector2(BUTTON_WIDTH, BUTTON_HEIGHT),
+              Color(200, 0, 0, 255), Color(255, 0, 0, 255),
+              [this]() { SetState(GameState::MAIN_MENU); });
+}
+
 void Menu::CreateSettingsMenu() {
     Vector2 center(600, 400);
     Vector2 startPos = center - Vector2(0, 60);
-    
+
     // Sound Settings button
     AddButton("Sound Settings", startPos, Vector2(BUTTON_WIDTH, BUTTON_HEIGHT),
               Color(0, 100, 200, 255), Color(0, 150, 255, 255),
               [this]() { SetState(GameState::SOUND_SETTINGS); });
-    
+
     // Keybind Settings button
-    AddButton("Keybind Settings", startPos + Vector2(0, BUTTON_SPACING), 
+    AddButton("Keybind Settings", startPos + Vector2(0, BUTTON_SPACING),
               Vector2(BUTTON_WIDTH, BUTTON_HEIGHT),
               Color(0, 100, 200, 255), Color(0, 150, 255, 255),
               [this]() { SetState(GameState::KEYBIND_SETTINGS); });
-    
-    // Back button
-    AddButton("Back", startPos + Vector2(0, BUTTON_SPACING * 2), 
+
+    // Back button - returns to previous state (MAIN_MENU or PAUSED)
+    AddButton("Back", startPos + Vector2(0, BUTTON_SPACING * 2),
               Vector2(BUTTON_WIDTH, BUTTON_HEIGHT),
               Color(150, 150, 150, 255), Color(200, 200, 200, 255),
-              [this]() { SetState(GameState::MAIN_MENU); });
+              [this]() {
+                  // Return to previous state (could be MAIN_MENU or PAUSED)
+                  if (m_previousState == GameState::PAUSED) {
+                      SetState(GameState::PAUSED);
+                  } else {
+                      SetState(GameState::MAIN_MENU);
+                  }
+              });
 }
 
 void Menu::CreateSoundSettingsMenu() {

@@ -7,17 +7,9 @@
 
 class Renderer;
 
-// Projectiles.h serves as a convenience header that includes
-// the main projectile-related classes from Physics.h
-// This allows for cleaner separation of concerns in the future
-
 // Forward declarations
 class Projectile;
 enum class ProjectileType;
-
-// The actual Projectile class and ProjectileType enum are defined in Physics.h
-// This file can be used to add additional projectile-related utilities
-// or manager classes in the future without cluttering Physics.h
 
 namespace ProjectileUtils {
     // Utility function to get projectile type name
