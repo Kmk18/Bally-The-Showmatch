@@ -59,5 +59,6 @@ Thumbs.db
 *.tmp
 temp/
 
-# Ignore all Markdown files
+# Ignore all Markdown files except README.md
 *.md
+!README.md
