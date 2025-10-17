@@ -20,12 +20,14 @@ enum class ProjectileType {
     SPLIT,
     ENHANCED_DAMAGE,
     ENHANCED_EXPLOSIVE,
-    TELEPORT
+    TELEPORT,
+    HEAL
 };
 
 class Projectile {
 public:
     Projectile(const Vector2& position, const Vector2& velocity, ProjectileType type, int ownerId);
+    Projectile(const Vector2& position, const Vector2& velocity, const std::vector<int>& skillTypes, int ownerId);
 
     void Update(float deltaTime);
     void Draw(class Renderer* renderer) const;
@@ -39,6 +41,12 @@ public:
     float GetDamage() const;
     float GetExplosionRadius() const;
     float GetExplosionForce() const;
+    bool HasSplit() const { return m_hasSplit; }
+    bool HasPowerBall() const { return m_hasPowerBall; }
+    bool HasExplosiveBall() const { return m_hasExplosiveBall; }
+    bool HasTeleportBall() const { return m_hasTeleportBall; }
+    bool HasHeal() const { return m_hasHeal; }
+    bool DamagesTerrain() const;
 
     void SetActive(bool active) { m_active = active; }
     void SetPosition(const Vector2& position) { m_position = position; }
@@ -56,8 +64,15 @@ private:
     float m_lifetime;
     float m_maxLifetime;
 
+    // Skill mixing flags
+    bool m_hasSplit;
+    bool m_hasPowerBall;
+    bool m_hasExplosiveBall;
+    bool m_hasTeleportBall;
+    bool m_hasHeal;
+
     // Physics constants
-    static constexpr float GRAVITY = 980.0f; // pixels per second squared
+    static constexpr float GRAVITY = 980.0f;
     static constexpr float AIR_RESISTANCE = 0.98f;
     static constexpr float DEFAULT_RADIUS = 8.0f;
     static constexpr float DEFAULT_MASS = 0.5f;
@@ -72,7 +87,9 @@ public:
     void Update(float deltaTime);
     void Draw(class Renderer* renderer);
     void AddProjectile(std::unique_ptr<Projectile> projectile);
+    void AddProjectileWithSkills(const Vector2& position, const Vector2& velocity, const std::vector<int>& skills, int ownerId);
     void RemoveProjectile(Projectile* projectile);
+    bool HasActiveProjectiles() const { return !m_projectiles.empty(); }
 
     void CheckCollisions(std::vector<std::unique_ptr<Player>>& players,
         std::vector<std::unique_ptr<SkillOrb>>& skillOrbs);
@@ -86,6 +103,8 @@ public:
     CollisionInfo CheckCircleTerrainCollision(const Vector2& pos, float radius, Terrain* terrain) const;
 
     void ApplyExplosion(const Vector2& center, float radius, float force,
+        std::vector<std::unique_ptr<Player>>& players);
+    void ApplyHealing(const Vector2& center, float radius, int ownerId,
         std::vector<std::unique_ptr<Player>>& players);
 
     // Set the terrain for collision detection

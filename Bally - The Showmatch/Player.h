@@ -51,10 +51,19 @@ public:
     void EndTurn();
     void ResetForNewGame();
 
-    // Skills
+    // Skills and Inventory
     bool HasSkill(int skillType) const;
     void UseSkill(int skillType);
     void AddSkill(int skillType);
+    bool AddSkillToInventory(int skillType); // Returns false if inventory is full
+    bool UseInventorySlot(int slot); // slot 0-3, returns false if empty
+    const std::vector<int>& GetInventory() const { return m_inventory; }
+    std::vector<int>& GetInventory() { return m_inventory; }
+    int GetInventorySlot(int slot) const; // Returns -1 if slot is empty or invalid
+    bool IsInventoryFull() const { return m_inventory.size() >= MAX_INVENTORY_SIZE; }
+    void ToggleSkillSelection(int slot); // Toggle skill selection for next shot
+    const std::vector<int>& GetSelectedSkills() const { return m_selectedSkills; }
+    void ClearSelectedSkills() { m_selectedSkills.clear(); }
 
 private:
     int m_id;
@@ -80,6 +89,11 @@ private:
     // Skills
     std::vector<int> m_availableSkills;
 
+    // Inventory system (4 slots)
+    std::vector<int> m_inventory; // Stack of up to 4 skill types
+    std::vector<int> m_selectedSkills; // Skills selected for next shot
+    static constexpr int MAX_INVENTORY_SIZE = 4;
+
     // Input handling
     bool m_leftPressed;
     bool m_rightPressed;
@@ -89,13 +103,13 @@ private:
     bool m_powerIncreasing;  // Track if power is increasing or decreasing
 
     // Constants
-    static constexpr float MOVE_SPEED = 10.0f;  // Reduced from 200 for slower movement
-    static constexpr float ANGLE_SPEED = 90.0f;
+    static constexpr float MOVE_SPEED = 5.0f;
+    static constexpr float ANGLE_SPEED = 5.0f;
     static constexpr float POWER_SPEED = 50.0f;
     static constexpr float MAX_POWER = 100.0f;
     static constexpr float MAX_ANGLE = 90.0f;
     static constexpr float MIN_ANGLE = -90.0f;
-    static constexpr float DEFAULT_HEALTH = 100.0f;
+    static constexpr float DEFAULT_HEALTH = 200.0f;
     static constexpr float DEFAULT_RADIUS = 20.0f;
     static constexpr float DEFAULT_MASS = 1.0f;
 };

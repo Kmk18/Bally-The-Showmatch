@@ -84,13 +84,15 @@ void Player::HandleInput(int input, bool pressed) {
         if (m_rightPressed) {
             m_position.x += MOVE_SPEED * (1.0f / 60.0f);
         }
+
+        // Angle controls: up aims upward, down aims downward
         if (m_upPressed) {
-            m_angle += ANGLE_SPEED * (1.0f / 60.0f);
-            m_angle = std::min(m_angle, MAX_ANGLE);
-        }
-        if (m_downPressed) {
             m_angle -= ANGLE_SPEED * (1.0f / 60.0f);
             m_angle = std::max(m_angle, MIN_ANGLE);
+        }
+        if (m_downPressed) {
+            m_angle += ANGLE_SPEED * (1.0f / 60.0f);
+            m_angle = std::min(m_angle, MAX_ANGLE);
         }
     }
 }
@@ -129,16 +131,7 @@ void Player::UpdatePhysics(float deltaTime) {
     // Apply friction
     m_velocity = m_velocity * 0.99f;
 
-    // Keep player on platform
-    float platformY = 650.0f; // Platform top
-    if (m_position.y > platformY - m_radius) {
-        m_position.y = platformY - m_radius;
-        if (m_velocity.y > 0) {
-            m_velocity.y = 0;
-        }
-    }
-
-    // Keep player within screen bounds
+    // Keep player within horizontal screen bounds
     m_position.x = clamp(m_position.x, m_radius, 1200.0f - m_radius);
 }
 
@@ -146,6 +139,7 @@ void Player::StartTurn() {
     m_state = PlayerState::AIMING;
     m_power = 0.0f;
     m_angle = -45.0f; // Reset angle
+    m_selectedSkills.clear(); // Clear selected skills for new turn
 }
 
 void Player::EndTurn() {
@@ -170,8 +164,9 @@ void Player::ResetForNewGame() {
     // Clear input states
     m_leftPressed = m_rightPressed = m_upPressed = m_downPressed = m_spacePressed = false;
 
-    // Clear skills
+    // Clear skills and inventory
     m_availableSkills.clear();
+    m_inventory.clear();
 }
 
 bool Player::HasSkill(int skillType) const {
@@ -189,5 +184,71 @@ void Player::AddSkill(int skillType) {
     // Check if player already has this skill
     if (!HasSkill(skillType)) {
         m_availableSkills.push_back(skillType);
+    }
+}
+
+bool Player::AddSkillToInventory(int skillType) {
+    // Check if inventory is full
+    if (m_inventory.size() >= MAX_INVENTORY_SIZE) {
+        return false;
+    }
+
+    // Add skill to inventory (can have duplicates)
+    m_inventory.push_back(skillType);
+    return true;
+}
+
+bool Player::UseInventorySlot(int slot) {
+    // Validate slot
+    if (slot < 0 || slot >= static_cast<int>(m_inventory.size())) {
+        return false;
+    }
+
+    // Remove skill from that slot
+    m_inventory.erase(m_inventory.begin() + slot);
+    return true;
+}
+
+int Player::GetInventorySlot(int slot) const {
+    if (slot < 0 || slot >= static_cast<int>(m_inventory.size())) {
+        return -1;
+    }
+    return m_inventory[slot];
+}
+
+void Player::ToggleSkillSelection(int slot) {
+    // Validate slot
+    if (slot < 0 || slot >= static_cast<int>(m_inventory.size())) {
+        return;
+    }
+
+    int skillType = m_inventory[slot];
+
+    // Check if skill is already selected
+    auto it = std::find(m_selectedSkills.begin(), m_selectedSkills.end(), skillType);
+    if (it != m_selectedSkills.end()) {
+        // Remove from selection
+        m_selectedSkills.erase(it);
+    }
+    else {
+        // Check if trying to select HEAL
+        if (skillType == 4) { // SkillType::HEAL
+            // HEAL cannot be combined with other skills
+            if (!m_selectedSkills.empty()) {
+                // Already have other skills selected, clear them first
+                m_selectedSkills.clear();
+            }
+            m_selectedSkills.push_back(skillType);
+        }
+        // Check if trying to select another skill while HEAL is selected
+        else if (!m_selectedSkills.empty() && m_selectedSkills[0] == 4) {
+            // HEAL is already selected, replace it with the new skill
+            m_selectedSkills.clear();
+            m_selectedSkills.push_back(skillType);
+        }
+        else {
+            // Normal skill selection (no heal involved)
+            m_selectedSkills.push_back(skillType);
+        }
     }
 }

@@ -142,26 +142,26 @@ void UI::DrawCurrentPlayerIndicator(int playerIndex) {
 void UI::DrawAimingUI(const Player& player, const Vector2& mousePosition) {
     Vector2 playerPos = player.GetPosition();
 
-    // Draw angle indicator
-    float displayAngle = player.GetAngle();
+    // Calculate velocity for both angle display and trajectory
+    float radians = player.GetAngle() * M_PI / 180.0f;
+    float powerRatio = player.GetPower() / 100.0f;
+    Vector2 velocity = Vector2(std::cos(radians), std::sin(radians));
+
+    // Mirror velocity when facing left
     if (!player.IsFacingRight()) {
-        displayAngle = 180.0f - displayAngle;
+        velocity.x = -velocity.x;
     }
+
+    // Draw angle indicator using actual velocity direction
+    float displayAngle = std::atan2(velocity.y, velocity.x) * 180.0f / M_PI;
     DrawAngleIndicator(playerPos, displayAngle, ANGLE_INDICATOR_LENGTH);
 
     // Draw power indicator
     Vector2 powerIndicatorPos = playerPos + Vector2(0, -60);
     DrawPowerIndicator(powerIndicatorPos, player.GetPower(), 100.0f);
 
-    // Draw trajectory preview
-    float radians = player.GetAngle() * M_PI / 180.0f;
-    float powerRatio = player.GetPower() / 100.0f;
-    Vector2 velocity = Vector2(std::cos(radians), std::sin(radians)) * (powerRatio * 800.0f);
-    if (!player.IsFacingRight()) {
-        velocity.x = -velocity.x;
-    }
-
-    m_renderer->DrawProjectileTrajectory(playerPos, velocity, 980.0f, 60);
+    // Draw trajectory preview using the same velocity
+    m_renderer->DrawProjectileTrajectory(playerPos, velocity * (powerRatio * 1200.0f), 980.0f, 60);
 
     // Draw controls help
     Vector2 helpPos(10, 400);
@@ -170,6 +170,60 @@ void UI::DrawAimingUI(const Player& player, const Vector2& mousePosition) {
     m_renderer->DrawText(helpPos + Vector2(0, 30), "Up/Down: Aim", Color(255, 255, 255, 255));
     m_renderer->DrawText(helpPos + Vector2(0, 45), "Space: Power (Hold)", Color(255, 255, 255, 255));
     m_renderer->DrawText(helpPos + Vector2(0, 60), "Enter: Throw", Color(255, 255, 255, 255));
+    m_renderer->DrawText(helpPos + Vector2(0, 75), "1/2/3/4: Select Skills", Color(255, 255, 255, 255));
+
+    // Draw inventory
+    Vector2 inventoryPos(900, 50);
+    DrawInventory(player, inventoryPos);
+}
+
+void UI::DrawInventory(const Player& player, const Vector2& position) {
+    // Draw inventory title
+    m_renderer->DrawText(position, "Inventory (1-4)", Color(255, 255, 255, 255));
+
+    const std::vector<int>& inventory = player.GetInventory();
+    const std::vector<int>& selectedSkills = player.GetSelectedSkills();
+
+    // Draw inventory slots
+    for (int i = 0; i < 4; ++i) {
+        Vector2 slotPos = position + Vector2(i * 60, 20);
+
+        // Draw slot background
+        Color slotColor = Color(50, 50, 50, 255);
+        if (i < inventory.size()) {
+            // Check if this skill is selected
+            int skillType = inventory[i];
+            bool isSelected = std::find(selectedSkills.begin(), selectedSkills.end(), skillType) != selectedSkills.end();
+
+            if (isSelected) {
+                slotColor = Color(255, 255, 0, 180); // Yellow highlight for selected
+            }
+            else {
+                slotColor = Color(70, 70, 70, 255);
+            }
+        }
+
+        m_renderer->DrawRect(slotPos, 50, 50, slotColor);
+        m_renderer->DrawRect(slotPos, 50, 50, Color(255, 255, 255, 255), false);
+
+        // Draw key number
+        std::string keyText = std::to_string(i + 1);
+        m_renderer->DrawText(slotPos + Vector2(5, 5), keyText.c_str(), Color(200, 200, 200, 255));
+
+        // Draw skill icon if slot is occupied
+        if (i < inventory.size()) {
+            int skillType = inventory[i];
+            Color skillColor = GetSkillColor(static_cast<SkillType>(skillType));
+
+            // Draw skill circle
+            Vector2 skillCenter = slotPos + Vector2(25, 30);
+            m_renderer->DrawCircle(skillCenter, 12, skillColor);
+
+            // Draw skill name
+            std::string skillName = GetSkillName(static_cast<SkillType>(skillType));
+            m_renderer->DrawText(slotPos + Vector2(5, 40), skillName.substr(0, 4).c_str(), Color(255, 255, 255, 255));
+        }
+    }
 }
 
 void UI::DrawPowerIndicator(const Vector2& position, float power, float maxPower) {
@@ -257,6 +311,8 @@ std::string UI::GetSkillName(SkillType skillType) const {
         return "Explosive+";
     case SkillType::TELEPORT:
         return "Teleport";
+    case SkillType::HEAL:
+        return "Heal";
     default:
         return "Unknown";
     }
@@ -272,6 +328,8 @@ Color UI::GetSkillColor(SkillType skillType) const {
         return Color(255, 0, 255, 255); // Magenta
     case SkillType::TELEPORT:
         return Color(0, 255, 255, 255); // Cyan
+    case SkillType::HEAL:
+        return Color(0, 255, 0, 255); // Green
     default:
         return Color(255, 255, 255, 255); // White
     }

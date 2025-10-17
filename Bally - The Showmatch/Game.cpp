@@ -8,8 +8,8 @@
 
 Game::Game() : m_window(nullptr), m_running(false), m_lastFrameTime(0.0f),
 m_gameState(GameState::MAIN_MENU), m_gameMode(GameMode::FREE_FOR_ALL), m_numPlayers(4),
-m_currentPlayerIndex(0), m_turnTimer(TURN_DURATION),
-m_gameStarted(false), m_gameEnded(false), m_winnerId(-1) {
+m_currentPlayerIndex(0), m_turnTimer(TURN_DURATION), m_turnCounter(0),
+m_gameStarted(false), m_gameEnded(false), m_winnerId(-1), m_waitingForProjectiles(false) {
 }
 
 Game::~Game() {
@@ -77,7 +77,7 @@ void Game::CreatePlayers() {
     int numPlayers = m_numPlayers;
     float platformWidth = 800.0f;
     float platformHeight = 50.0f;
-    float startY = 600.0f; // Above platform
+    float startY = 600.0f;
 
     for (int i = 0; i < numPlayers; ++i) {
         float spacing = platformWidth / (numPlayers + 1);
@@ -93,14 +93,17 @@ void Game::CreatePlayers() {
 }
 
 void Game::SetupPlayerInputs() {
-    // All players use the same keybinds (Arrow keys + Space) since it's turn-based
-    // No need for different keys as only one player moves at a time
+    // All players use the same keybinds (Arrow keys + Space + 1-4) since it's turn-based
     for (int i = 0; i < m_numPlayers; ++i) {
         m_inputManager->SetKeyMapping(i, InputManager::PlayerInput::MOVE_LEFT, SDL_SCANCODE_LEFT);
         m_inputManager->SetKeyMapping(i, InputManager::PlayerInput::MOVE_RIGHT, SDL_SCANCODE_RIGHT);
         m_inputManager->SetKeyMapping(i, InputManager::PlayerInput::AIM_UP, SDL_SCANCODE_UP);
         m_inputManager->SetKeyMapping(i, InputManager::PlayerInput::AIM_DOWN, SDL_SCANCODE_DOWN);
         m_inputManager->SetKeyMapping(i, InputManager::PlayerInput::ADJUST_POWER, SDL_SCANCODE_SPACE);
+        m_inputManager->SetKeyMapping(i, InputManager::PlayerInput::USE_SLOT_1, SDL_SCANCODE_1);
+        m_inputManager->SetKeyMapping(i, InputManager::PlayerInput::USE_SLOT_2, SDL_SCANCODE_2);
+        m_inputManager->SetKeyMapping(i, InputManager::PlayerInput::USE_SLOT_3, SDL_SCANCODE_3);
+        m_inputManager->SetKeyMapping(i, InputManager::PlayerInput::USE_SLOT_4, SDL_SCANCODE_4);
     }
 }
 
@@ -188,15 +191,38 @@ void Game::Update(float deltaTime) {
                 if (!currentPlayer->IsFacingRight()) {
                     velocity.x = -velocity.x;
                 }
-                velocity = velocity * (powerRatio * 800.0f);
+                velocity = velocity * (powerRatio * 1200.0f);
 
                 Vector2 spawnPos = currentPlayer->GetPosition();
-                m_physics->AddProjectile(std::make_unique<Projectile>(spawnPos, velocity, ProjectileType::NORMAL, currentPlayer->GetId()));
+
+                // Check if player has selected skills
+                const std::vector<int>& selectedSkills = currentPlayer->GetSelectedSkills();
+                if (!selectedSkills.empty()) {
+                    // Create projectile with skills
+                    m_physics->AddProjectileWithSkills(spawnPos, velocity, selectedSkills, currentPlayer->GetId());
+
+                    // Remove used skills from inventory
+                    for (int skillType : selectedSkills) {
+                        auto& inventory = currentPlayer->GetInventory();
+                        auto it = std::find(inventory.begin(), inventory.end(), skillType);
+                        if (it != inventory.end()) {
+                            int slot = static_cast<int>(std::distance(inventory.begin(), it));
+                            currentPlayer->UseInventorySlot(slot);
+                        }
+                    }
+
+                    // Clear selected skills
+                    currentPlayer->ClearSelectedSkills();
+                }
+                else {
+                    // Normal projectile without skills
+                    m_physics->AddProjectile(std::make_unique<Projectile>(spawnPos, velocity, ProjectileType::NORMAL, currentPlayer->GetId()));
+                }
 
                 currentPlayer->SetPower(0.0f);
                 currentPlayer->SetState(PlayerState::IDLE);
-                // End turn after throwing
-                m_turnTimer = 0.0f;
+                // Wait for projectiles to land before ending turn
+                m_waitingForProjectiles = true;
             }
         }
 
@@ -205,16 +231,28 @@ void Game::Update(float deltaTime) {
 
         // Check win conditions
         CheckWinConditions();
-
-        // Spawn skill orbs
-        if (m_turnTimer > TURN_DURATION - 5.0f && m_turnTimer < TURN_DURATION - 4.9f) {
-            SpawnSkillOrbs();
-        }
     }
 }
 
 void Game::ProcessCurrentPlayerInput() {
     Player* currentPlayer = m_players[m_currentPlayerIndex].get();
+
+    // Check if inventory slots were pressed (toggle skill selection)
+    if (currentPlayer->GetState() == PlayerState::AIMING) {
+        // Check for skill usage (keys 1-4)
+        if (m_inputManager->IsPlayerInputJustPressed(m_currentPlayerIndex, InputManager::PlayerInput::USE_SLOT_1)) {
+            currentPlayer->ToggleSkillSelection(0);
+        }
+        if (m_inputManager->IsPlayerInputJustPressed(m_currentPlayerIndex, InputManager::PlayerInput::USE_SLOT_2)) {
+            currentPlayer->ToggleSkillSelection(1);
+        }
+        if (m_inputManager->IsPlayerInputJustPressed(m_currentPlayerIndex, InputManager::PlayerInput::USE_SLOT_3)) {
+            currentPlayer->ToggleSkillSelection(2);
+        }
+        if (m_inputManager->IsPlayerInputJustPressed(m_currentPlayerIndex, InputManager::PlayerInput::USE_SLOT_4)) {
+            currentPlayer->ToggleSkillSelection(3);
+        }
+    }
 
     // Check if space key (ADJUST_POWER) was just released to shoot
     if (currentPlayer->GetState() == PlayerState::AIMING) {
@@ -239,14 +277,58 @@ void Game::ProcessTurn() {
     if (!m_gameStarted) {
         m_gameStarted = true;
         m_turnTimer = TURN_DURATION;
+        m_turnCounter = 0;
         if (m_currentPlayerIndex < m_players.size()) {
             m_players[m_currentPlayerIndex]->StartTurn();
         }
+        // Spawn skill orbs at start of first turn
+        SpawnSkillOrbs();
         m_ui->ShowMessage("Game Started! Player " + std::to_string(m_currentPlayerIndex + 1) + "'s turn");
         return;
     }
 
     if (m_gameEnded) return;
+
+    // Check if current player died during their turn - skip immediately
+    if (!m_players[m_currentPlayerIndex]->IsAlive()) {
+        m_players[m_currentPlayerIndex]->EndTurn();
+        m_waitingForProjectiles = false;
+
+        // Move to next alive player
+        do {
+            m_currentPlayerIndex = (m_currentPlayerIndex + 1) % m_players.size();
+        } while (!m_players[m_currentPlayerIndex]->IsAlive() && !m_gameEnded);
+
+        // Start next player's turn
+        m_turnCounter++;
+        m_turnTimer = TURN_DURATION;
+        m_players[m_currentPlayerIndex]->StartTurn();
+
+        // Spawn skill orbs at start of turn
+        SpawnSkillOrbs();
+
+        // Remove expired skill orbs (older than 3 turns)
+        m_skillOrbs.erase(
+            std::remove_if(m_skillOrbs.begin(), m_skillOrbs.end(),
+                [this](const std::unique_ptr<SkillOrb>& orb) {
+                    return orb->IsExpired(m_turnCounter);
+                }),
+            m_skillOrbs.end()
+        );
+
+        m_ui->ShowMessage("Player " + std::to_string(m_currentPlayerIndex + 1) + "'s turn");
+        return;
+    }
+
+    // If waiting for projectiles, don't count down timer until all projectiles land
+    if (m_waitingForProjectiles) {
+        if (!m_physics->HasActiveProjectiles()) {
+            // All projectiles have landed, can now end turn
+            m_waitingForProjectiles = false;
+            m_turnTimer = 0.0f; // Force turn end
+        }
+        return; // Don't decrement timer while waiting
+    }
 
     m_turnTimer -= 1.0f / 60.0f;
 
@@ -260,8 +342,21 @@ void Game::ProcessTurn() {
         } while (!m_players[m_currentPlayerIndex]->IsAlive() && !m_gameEnded);
 
         // Start next player's turn
+        m_turnCounter++;
         m_turnTimer = TURN_DURATION;
         m_players[m_currentPlayerIndex]->StartTurn();
+
+        // Spawn skill orbs at start of turn
+        SpawnSkillOrbs();
+
+        // Remove expired skill orbs (older than 3 turns)
+        m_skillOrbs.erase(
+            std::remove_if(m_skillOrbs.begin(), m_skillOrbs.end(),
+                [this](const std::unique_ptr<SkillOrb>& orb) {
+                    return orb->IsExpired(m_turnCounter);
+                }),
+            m_skillOrbs.end()
+        );
 
         m_ui->ShowMessage("Player " + std::to_string(m_currentPlayerIndex + 1) + "'s turn");
     }
@@ -271,15 +366,16 @@ void Game::SpawnSkillOrbs() {
     std::random_device rd;
     std::mt19937 gen(rd());
     std::uniform_real_distribution<float> xDist(100.0f, 1100.0f);
-    std::uniform_real_distribution<float> yDist(400.0f, 500.0f);
+    std::uniform_real_distribution<float> yDist(200.0f, 500.0f);
     std::uniform_int_distribution<int> skillDist(0, static_cast<int>(SkillType::COUNT) - 1);
+    std::uniform_int_distribution<int> orbCountDist(2, 5);
 
-    // Spawn 1-3 skill orbs
-    int numOrbs = 1 + (gen() % 3);
+    // Spawn 2-5 skill orbs
+    int numOrbs = orbCountDist(gen);
     for (int i = 0; i < numOrbs; ++i) {
         Vector2 position(xDist(gen), yDist(gen));
         SkillType skillType = static_cast<SkillType>(skillDist(gen));
-        m_skillOrbs.push_back(std::make_unique<SkillOrb>(position, skillType));
+        m_skillOrbs.push_back(std::make_unique<SkillOrb>(position, skillType, m_turnCounter));
     }
 
     m_ui->ShowMessage("Skill orbs spawned!");
@@ -306,9 +402,11 @@ void Game::CheckWinConditions() {
 void Game::ResetGame() {
     m_currentPlayerIndex = 0;
     m_turnTimer = TURN_DURATION;
+    m_turnCounter = 0;
     m_gameStarted = false;
     m_gameEnded = false;
     m_winnerId = -1;
+    m_waitingForProjectiles = false;
 
     // Reset all players
     for (auto& player : m_players) {
@@ -444,9 +542,11 @@ void Game::StartGame() {
     // Reset game state
     m_currentPlayerIndex = 0;
     m_turnTimer = TURN_DURATION;
+    m_turnCounter = 0;
     m_gameStarted = false;
     m_gameEnded = false;
     m_winnerId = -1;
+    m_waitingForProjectiles = false;
 
     // Clear any existing projectiles and skill orbs
     m_skillOrbs.clear();

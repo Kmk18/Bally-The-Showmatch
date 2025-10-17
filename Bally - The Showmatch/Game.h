@@ -64,10 +64,12 @@ private:
 
     int m_currentPlayerIndex;
     float m_turnTimer;
+    int m_turnCounter; // Track turn number for skill orb lifetimes
     static constexpr float TURN_DURATION = 20.0f;
     bool m_gameStarted;
     bool m_gameEnded;
     int m_winnerId;
+    bool m_waitingForProjectiles; // Wait for projectiles to land before ending turn
 
     // Game constants
     static constexpr int MAX_PLAYERS = 4;

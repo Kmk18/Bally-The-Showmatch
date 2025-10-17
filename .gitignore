@@ -14,6 +14,7 @@ obj/
 *.pdb
 *.idb
 *.manifest
+*.md
 
 # CMake specific
 CMakeCache.txt
@@ -57,3 +58,6 @@ Thumbs.db
 *.log
 *.tmp
 temp/
+
+# Ignore all Markdown files
+*.md

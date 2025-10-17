@@ -8,17 +8,18 @@ class Renderer;
 
 class SkillOrb {
 public:
-    SkillOrb(const Vector2& position, SkillType skillType);
+    SkillOrb(const Vector2& position, SkillType skillType, int spawnTurn);
 
     void Update(float deltaTime);
     void Draw(Renderer* renderer) const;
     void OnCollected(Player* player);
+    bool IsExpired(int currentTurn) const { return currentTurn >= m_spawnTurn + 3; }
 
     const Vector2& GetPosition() const { return m_position; }
     float GetRadius() const { return m_radius; }
     SkillType GetSkillType() const { return m_skillType; }
     bool IsCollected() const { return m_collected; }
-    bool IsActive() const { return !m_collected && m_lifetime > 0; }
+    bool IsActive() const { return !m_collected; }
 
     void SetPosition(const Vector2& position) { m_position = position; }
     void SetCollected(bool collected) { m_collected = collected; }
@@ -34,8 +35,8 @@ private:
     float m_radius;
     SkillType m_skillType;
     bool m_collected;
-    float m_lifetime;
-    float m_maxLifetime;
+    int m_spawnTurn; // Turn number when this orb was spawned
+    float m_animTime; // Animation timer
     float m_bobOffset;
     float m_bobSpeed;
     Color m_color;

@@ -2,6 +2,7 @@
 #include "Player.h"
 #include "SkillOrb.h"
 #include "Terrain.h"
+#include "UI.h"
 #include <cmath>
 #include <algorithm>
 
@@ -14,7 +15,51 @@ constexpr const T& clamp(const T& v, const T& lo, const T& hi) {
 Projectile::Projectile(const Vector2& position, const Vector2& velocity, ProjectileType type, int ownerId)
     : m_position(position), m_velocity(velocity), m_acceleration(Vector2::Zero()), m_radius(DEFAULT_RADIUS),
     m_mass(DEFAULT_MASS), m_type(type), m_ownerId(ownerId), m_active(true),
-    m_lifetime(0.0f), m_maxLifetime(MAX_LIFETIME) {
+    m_lifetime(0.0f), m_maxLifetime(MAX_LIFETIME), m_hasSplit(false), m_hasPowerBall(false),
+    m_hasExplosiveBall(false), m_hasTeleportBall(false), m_hasHeal(false) {
+}
+
+Projectile::Projectile(const Vector2& position, const Vector2& velocity, const std::vector<int>& skillTypes, int ownerId)
+    : m_position(position), m_velocity(velocity), m_acceleration(Vector2::Zero()), m_radius(DEFAULT_RADIUS),
+    m_mass(DEFAULT_MASS), m_type(ProjectileType::NORMAL), m_ownerId(ownerId), m_active(true),
+    m_lifetime(0.0f), m_maxLifetime(MAX_LIFETIME), m_hasSplit(false), m_hasPowerBall(false),
+    m_hasExplosiveBall(false), m_hasTeleportBall(false), m_hasHeal(false) {
+
+    // Parse skill types and set flags
+    for (int skillType : skillTypes) {
+        if (skillType == static_cast<int>(SkillType::SPLIT_THROW)) {
+            m_hasSplit = true;
+        }
+        else if (skillType == static_cast<int>(SkillType::ENHANCED_DAMAGE)) {
+            m_hasPowerBall = true;
+        }
+        else if (skillType == static_cast<int>(SkillType::ENHANCED_EXPLOSIVE)) {
+            m_hasExplosiveBall = true;
+        }
+        else if (skillType == static_cast<int>(SkillType::TELEPORT)) {
+            m_hasTeleportBall = true;
+        }
+        else if (skillType == static_cast<int>(SkillType::HEAL)) {
+            m_hasHeal = true;
+        }
+    }
+
+    // Determine visual type based on priority (heal > teleport > explosive > power > split)
+    if (m_hasHeal) {
+        m_type = ProjectileType::HEAL;
+    }
+    else if (m_hasTeleportBall) {
+        m_type = ProjectileType::TELEPORT;
+    }
+    else if (m_hasExplosiveBall) {
+        m_type = ProjectileType::ENHANCED_EXPLOSIVE;
+    }
+    else if (m_hasPowerBall) {
+        m_type = ProjectileType::ENHANCED_DAMAGE;
+    }
+    else if (m_hasSplit) {
+        m_type = ProjectileType::SPLIT;
+    }
 }
 
 void Projectile::Update(float deltaTime) {
@@ -65,6 +110,9 @@ void Projectile::Draw(class Renderer* renderer) const {
     case ProjectileType::TELEPORT:
         projectileColor = Color(0, 255, 255, 255); // Cyan
         break;
+    case ProjectileType::HEAL:
+        projectileColor = Color(0, 255, 0, 255); // Green
+        break;
     }
 
     renderer->SetDrawColor(projectileColor);
@@ -72,48 +120,100 @@ void Projectile::Draw(class Renderer* renderer) const {
 }
 
 float Projectile::GetDamage() const {
-    switch (m_type) {
-    case ProjectileType::NORMAL:
-    case ProjectileType::ENHANCED_EXPLOSIVE:
-    case ProjectileType::TELEPORT:
-        return 25.0f;
-    case ProjectileType::SPLIT:
-        return 15.0f;
-    case ProjectileType::ENHANCED_DAMAGE:
-        return 50.0f;
-    default:
-        return 25.0f;
+    float baseDamage = 25.0f;
+
+    // Heal ball deals no damage
+    if (m_hasHeal) {
+        return 0.0f;
     }
+
+    // Teleport ball deals no damage
+    if (m_hasTeleportBall) {
+        return 0.0f;
+    }
+
+    // Split reduces damage
+    if (m_hasSplit) {
+        baseDamage *= 0.4f;
+    }
+
+    // Power ball increases damage
+    if (m_hasPowerBall) {
+        baseDamage *= 2.0f;
+    }
+
+    // Explosive ball decreases damage
+    if (m_hasExplosiveBall) {
+        baseDamage *= 0.5f;
+    }
+
+    return baseDamage;
 }
 
 float Projectile::GetExplosionRadius() const {
-    switch (m_type) {
-    case ProjectileType::NORMAL:
-    case ProjectileType::ENHANCED_DAMAGE:
-    case ProjectileType::SPLIT:
-        return 80.0f;
-    case ProjectileType::ENHANCED_EXPLOSIVE:
-        return 150.0f;
-    case ProjectileType::TELEPORT:
-        return 0.0f; // No explosion
-    default:
-        return 80.0f;
+    // Heal ball uses heal radius instead (returned separately)
+    if (m_hasHeal) {
+        return 50.0f; // Heal AOE radius
     }
+
+    float baseRadius = 20.0f;
+
+    // Teleport ball has no explosion
+    if (m_hasTeleportBall && !m_hasExplosiveBall && !m_hasPowerBall) {
+        return 0.0f;
+    }
+
+    // Explosive ball increases explosion radius
+    if (m_hasExplosiveBall) {
+        baseRadius = 50.0f;
+    }
+
+    return baseRadius;
 }
 
 float Projectile::GetExplosionForce() const {
-    switch (m_type) {
-    case ProjectileType::NORMAL:
-    case ProjectileType::SPLIT:
-    case ProjectileType::TELEPORT:
-        return 500.0f;
-    case ProjectileType::ENHANCED_DAMAGE:
-        return 300.0f;
-    case ProjectileType::ENHANCED_EXPLOSIVE:
-        return 800.0f;
-    default:
-        return 500.0f;
+    // Heal ball has no force
+    if (m_hasHeal) {
+        return 0.0f;
     }
+
+    float baseForce = 500.0f;
+
+    // Teleport ball has no force
+    if (m_hasTeleportBall && !m_hasExplosiveBall && !m_hasPowerBall) {
+        return 0.0f;
+    }
+
+    // Power ball reduces explosion force
+    if (m_hasPowerBall) {
+        baseForce = 300.0f;
+    }
+
+    // Explosive ball increases explosion force
+    if (m_hasExplosiveBall) {
+        baseForce = 800.0f;
+    }
+
+    return baseForce;
+}
+
+bool Projectile::DamagesTerrain() const {
+    // Heal ball doesn't damage terrain
+    if (m_hasHeal) {
+        return false;
+    }
+
+    // Power ball doesn't damage terrain
+    if (m_hasPowerBall && !m_hasExplosiveBall) {
+        return false;
+    }
+
+    // Teleport ball doesn't damage terrain (unless mixed with other skills)
+    if (m_hasTeleportBall && !m_hasExplosiveBall && !m_hasPowerBall) {
+        return false;
+    }
+
+    return true;
 }
 
 Physics::Physics() : m_terrain(nullptr), m_platformWidth(PLATFORM_WIDTH), m_platformHeight(PLATFORM_HEIGHT),
@@ -151,6 +251,44 @@ void Physics::AddProjectile(std::unique_ptr<Projectile> projectile) {
     m_projectiles.push_back(std::move(projectile));
 }
 
+void Physics::AddProjectileWithSkills(const Vector2& position, const Vector2& velocity, const std::vector<int>& skills, int ownerId) {
+    // Check if has split skill
+    bool hasSplit = false;
+    for (int skill : skills) {
+        if (skill == static_cast<int>(SkillType::SPLIT_THROW)) {
+            hasSplit = true;
+            break;
+        }
+    }
+
+    if (hasSplit) {
+        // Create 3 projectiles with angle offsets
+        const float angleOffset = 10.0f;
+        const float radianOffset = angleOffset * 3.14159265f / 180.0f;
+
+        // Calculate angle from velocity
+        float baseAngle = std::atan2(velocity.y, velocity.x);
+        float speed = velocity.Length();
+
+        // Middle projectile
+        m_projectiles.push_back(std::make_unique<Projectile>(position, velocity, skills, ownerId));
+
+        // Upper projectile (offset upward)
+        float upperAngle = baseAngle - radianOffset;
+        Vector2 upperVelocity(std::cos(upperAngle) * speed, std::sin(upperAngle) * speed);
+        m_projectiles.push_back(std::make_unique<Projectile>(position, upperVelocity, skills, ownerId));
+
+        // Lower projectile (offset downward)
+        float lowerAngle = baseAngle + radianOffset;
+        Vector2 lowerVelocity(std::cos(lowerAngle) * speed, std::sin(lowerAngle) * speed);
+        m_projectiles.push_back(std::make_unique<Projectile>(position, lowerVelocity, skills, ownerId));
+    }
+    else {
+        // Single projectile
+        m_projectiles.push_back(std::make_unique<Projectile>(position, velocity, skills, ownerId));
+    }
+}
+
 void Physics::RemoveProjectile(Projectile* projectile) {
     m_projectiles.erase(
         std::remove_if(m_projectiles.begin(), m_projectiles.end(),
@@ -163,11 +301,9 @@ void Physics::CheckCollisions(std::vector<std::unique_ptr<Player>>& players,
     std::vector<std::unique_ptr<SkillOrb>>& skillOrbs) {
     CheckProjectileCollisions(players, skillOrbs);
 
-    // Use terrain collision if terrain is set, otherwise use platform collision
+    // Only use terrain collision (no platform)
     if (m_terrain) {
         CheckPlayerTerrainCollisions(players);
-    } else {
-        CheckPlayerPlatformCollisions(players);
     }
 
     CheckSkillOrbCollisions(players, skillOrbs);
@@ -178,38 +314,65 @@ void Physics::CheckProjectileCollisions(std::vector<std::unique_ptr<Player>>& pl
     for (auto& projectile : m_projectiles) {
         if (!projectile->IsActive()) continue;
 
-        // Check collision with terrain or platform
+        // Check collision with skill orbs - projectiles collect them for their owner
+        for (auto& orb : skillOrbs) {
+            if (orb->IsCollected() || !orb->IsActive()) continue;
+
+            // Check if projectile intersects with skill orb
+            Vector2 distance = orb->GetPosition() - projectile->GetPosition();
+            float distanceLength = distance.Length();
+            float combinedRadius = orb->GetRadius() + projectile->GetRadius();
+
+            if (distanceLength < combinedRadius) {
+                // Find the owner player and give them the skill
+                for (auto& player : players) {
+                    if (player->GetId() == projectile->GetOwnerId()) {
+                        orb->OnCollected(player.get());
+                        break;
+                    }
+                }
+            }
+        }
+
+        // Check collision with terrain only (no platform)
         bool hitTerrain = false;
         if (m_terrain) {
             // Check if projectile hit terrain
             if (m_terrain->IsCircleSolid(projectile->GetPosition(), projectile->GetRadius())) {
                 hitTerrain = true;
             }
-        } else {
-            // Fall back to platform collision
-            CollisionInfo platformCollision = CheckCirclePlatformCollision(projectile->GetPosition(), projectile->GetRadius());
-            hitTerrain = platformCollision.hasCollision;
         }
 
         if (hitTerrain) {
             // Handle terrain/platform collision
-            if (projectile->GetType() == ProjectileType::TELEPORT) {
-                // Teleport the owner to this location
-                for (auto& player : players) {
-                    if (player->GetId() == projectile->GetOwnerId()) {
-                        player->SetPosition(projectile->GetPosition());
-                        break;
+            if (projectile->HasHeal()) {
+                // Apply healing to all allies in AOE
+                ApplyHealing(projectile->GetPosition(), projectile->GetExplosionRadius(),
+                    projectile->GetOwnerId(), players);
+            }
+            else if (projectile->HasTeleportBall()) {
+                // Teleport the owner to this location (unless it's void)
+                Vector2 teleportPos = projectile->GetPosition();
+                // Make sure teleport position is above terrain
+                if (teleportPos.y < 850.0f) {
+                    for (auto& player : players) {
+                        if (player->GetId() == projectile->GetOwnerId()) {
+                            player->SetPosition(teleportPos);
+                            break;
+                        }
                     }
                 }
             }
             else {
-                // Create explosion and destroy terrain
-                ApplyExplosion(projectile->GetPosition(), projectile->GetExplosionRadius(),
-                    projectile->GetExplosionForce(), players);
+                // Apply explosion effects if not pure teleport
+                if (projectile->GetExplosionRadius() > 0) {
+                    ApplyExplosion(projectile->GetPosition(), projectile->GetExplosionRadius(),
+                        projectile->GetExplosionForce(), players);
 
-                // Destroy terrain if available
-                if (m_terrain) {
-                    m_terrain->DestroyCircle(projectile->GetPosition(), projectile->GetExplosionRadius());
+                    // Destroy terrain only if projectile damages terrain
+                    if (m_terrain && projectile->DamagesTerrain()) {
+                        m_terrain->DestroyCircle(projectile->GetPosition(), projectile->GetExplosionRadius());
+                    }
                 }
             }
 
@@ -228,7 +391,12 @@ void Physics::CheckProjectileCollisions(std::vector<std::unique_ptr<Player>>& pl
 
             if (playerCollision.hasCollision) {
                 // Handle player collision
-                if (projectile->GetType() == ProjectileType::TELEPORT) {
+                if (projectile->HasHeal()) {
+                    // Apply healing to all allies in AOE
+                    ApplyHealing(projectile->GetPosition(), projectile->GetExplosionRadius(),
+                        projectile->GetOwnerId(), players);
+                }
+                else if (projectile->HasTeleportBall()) {
                     // Teleport the owner to this location
                     for (auto& owner : players) {
                         if (owner->GetId() == projectile->GetOwnerId()) {
@@ -238,10 +406,22 @@ void Physics::CheckProjectileCollisions(std::vector<std::unique_ptr<Player>>& pl
                     }
                 }
                 else {
-                    // Damage player and create explosion
-                    player->TakeDamage(projectile->GetDamage());
-                    ApplyExplosion(projectile->GetPosition(), projectile->GetExplosionRadius(),
-                        projectile->GetExplosionForce(), players);
+                    // Damage player (if damage > 0)
+                    float damage = projectile->GetDamage();
+                    if (damage > 0) {
+                        player->TakeDamage(damage);
+                    }
+
+                    // Apply explosion effects
+                    if (projectile->GetExplosionRadius() > 0) {
+                        ApplyExplosion(projectile->GetPosition(), projectile->GetExplosionRadius(),
+                            projectile->GetExplosionForce(), players);
+
+                        // Destroy terrain only if projectile damages terrain
+                        if (m_terrain && projectile->DamagesTerrain()) {
+                            m_terrain->DestroyCircle(projectile->GetPosition(), projectile->GetExplosionRadius());
+                        }
+                    }
                 }
 
                 projectile->SetActive(false);
@@ -392,7 +572,7 @@ void Physics::CheckPlayerTerrainCollisions(std::vector<std::unique_ptr<Player>>&
         float radius = player->GetRadius();
 
         // Check if player fell into the void (below screen)
-        if (pos.y > 850.0f) {  // Screen height is 800, give some buffer
+        if (pos.y > 850.0f) { 
             player->TakeDamage(player->GetMaxHealth());  // Kill the player
             continue;
         }
@@ -475,4 +655,21 @@ CollisionInfo Physics::CheckCircleTerrainCollision(const Vector2& pos, float rad
     }
 
     return info;
+}
+
+void Physics::ApplyHealing(const Vector2& center, float radius, int ownerId,
+    std::vector<std::unique_ptr<Player>>& players) {
+    for (auto& player : players) {
+        if (!player->IsAlive()) continue;
+
+        Vector2 distance = player->GetPosition() - center;
+        float distanceLength = distance.Length();
+
+        // Heal all players (including thrower) within radius
+        if (distanceLength < radius) {
+            // Heal for 30% of max health
+            float healAmount = player->GetMaxHealth() * 0.3f;
+            player->Heal(healAmount);
+        }
+    }
 }

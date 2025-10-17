@@ -14,6 +14,7 @@ enum class SkillType {
     ENHANCED_DAMAGE,
     ENHANCED_EXPLOSIVE,
     TELEPORT,
+    HEAL,
     COUNT
 };
 
@@ -57,6 +58,7 @@ private:
     void DrawAngleIndicator(const Vector2& position, float angle, float length);
     void DrawMessages();
     void DrawGameOverScreen(int winnerId);
+    void DrawInventory(const Player& player, const Vector2& position);
 
     // Skill UI
     void DrawSkillOrbs(const std::vector<std::unique_ptr<class SkillOrb>>& skillOrbs);

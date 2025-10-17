@@ -86,6 +86,10 @@ InputManager::PlayerInput InputManager::GetPlayerInput(int playerId, SDL_Scancod
     if (key == mappings.aimUp) return PlayerInput::AIM_UP;
     if (key == mappings.aimDown) return PlayerInput::AIM_DOWN;
     if (key == mappings.adjustPower) return PlayerInput::ADJUST_POWER;
+    if (key == mappings.useSlot1) return PlayerInput::USE_SLOT_1;
+    if (key == mappings.useSlot2) return PlayerInput::USE_SLOT_2;
+    if (key == mappings.useSlot3) return PlayerInput::USE_SLOT_3;
+    if (key == mappings.useSlot4) return PlayerInput::USE_SLOT_4;
 
     return PlayerInput::NONE;
 }
@@ -115,11 +119,67 @@ bool InputManager::IsPlayerInputPressed(int playerId, PlayerInput input) const {
     case PlayerInput::ADJUST_POWER:
         key = mappings.adjustPower;
         break;
+    case PlayerInput::USE_SLOT_1:
+        key = mappings.useSlot1;
+        break;
+    case PlayerInput::USE_SLOT_2:
+        key = mappings.useSlot2;
+        break;
+    case PlayerInput::USE_SLOT_3:
+        key = mappings.useSlot3;
+        break;
+    case PlayerInput::USE_SLOT_4:
+        key = mappings.useSlot4;
+        break;
     default:
         return false;
     }
 
     return IsKeyPressed(key);
+}
+
+bool InputManager::IsPlayerInputJustPressed(int playerId, PlayerInput input) {
+    auto it = m_playerMappings.find(playerId);
+    if (it == m_playerMappings.end()) {
+        return false;
+    }
+
+    const PlayerKeyMappings& mappings = it->second;
+    SDL_Scancode key = SDL_SCANCODE_UNKNOWN;
+
+    switch (input) {
+    case PlayerInput::MOVE_LEFT:
+        key = mappings.moveLeft;
+        break;
+    case PlayerInput::MOVE_RIGHT:
+        key = mappings.moveRight;
+        break;
+    case PlayerInput::AIM_UP:
+        key = mappings.aimUp;
+        break;
+    case PlayerInput::AIM_DOWN:
+        key = mappings.aimDown;
+        break;
+    case PlayerInput::ADJUST_POWER:
+        key = mappings.adjustPower;
+        break;
+    case PlayerInput::USE_SLOT_1:
+        key = mappings.useSlot1;
+        break;
+    case PlayerInput::USE_SLOT_2:
+        key = mappings.useSlot2;
+        break;
+    case PlayerInput::USE_SLOT_3:
+        key = mappings.useSlot3;
+        break;
+    case PlayerInput::USE_SLOT_4:
+        key = mappings.useSlot4;
+        break;
+    default:
+        return false;
+    }
+
+    return IsKeyJustPressed(key);
 }
 
 bool InputManager::IsPlayerInputJustReleased(int playerId, PlayerInput input) {
@@ -172,6 +232,18 @@ void InputManager::SetKeyMapping(int playerId, PlayerInput input, SDL_Scancode k
         break;
     case PlayerInput::ADJUST_POWER:
         mappings.adjustPower = key;
+        break;
+    case PlayerInput::USE_SLOT_1:
+        mappings.useSlot1 = key;
+        break;
+    case PlayerInput::USE_SLOT_2:
+        mappings.useSlot2 = key;
+        break;
+    case PlayerInput::USE_SLOT_3:
+        mappings.useSlot3 = key;
+        break;
+    case PlayerInput::USE_SLOT_4:
+        mappings.useSlot4 = key;
         break;
     default:
         break;
