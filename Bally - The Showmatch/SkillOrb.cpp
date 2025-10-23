@@ -66,6 +66,8 @@ Color SkillOrb::GetSkillColor() const {
         return Color(255, 0, 255, 255); // Magenta
     case SkillType::TELEPORT:
         return Color(0, 255, 255, 255); // Cyan
+    case SkillType::HEAL:
+        return Color(0, 255, 0, 255); // Green
     default:
         return Color(255, 255, 255, 255); // White
     }
@@ -81,6 +83,8 @@ std::string SkillOrb::GetSkillName() const {
         return "Explosive+";
     case SkillType::TELEPORT:
         return "Teleport";
+    case SkillType::HEAL:
+        return "Heal";
     default:
         return "Unknown";
     }
