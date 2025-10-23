@@ -231,23 +231,23 @@ void Player::ToggleSkillSelection(int slot) {
         m_selectedSkills.erase(it);
     }
     else {
-        // Check if trying to select HEAL
-        if (skillType == 4) { // SkillType::HEAL
-            // HEAL cannot be combined with other skills
+        // Check if trying to select TELEPORT or HEAL (cannot be combined with others)
+        if (skillType == 3 || skillType == 4) { // SkillType::TELEPORT or HEAL
+            // TELEPORT and HEAL cannot be combined with other skills
             if (!m_selectedSkills.empty()) {
                 // Already have other skills selected, clear them first
                 m_selectedSkills.clear();
             }
             m_selectedSkills.push_back(skillType);
         }
-        // Check if trying to select another skill while HEAL is selected
-        else if (!m_selectedSkills.empty() && m_selectedSkills[0] == 4) {
-            // HEAL is already selected, replace it with the new skill
+        // Check if trying to select another skill while TELEPORT or HEAL is selected
+        else if (!m_selectedSkills.empty() && (m_selectedSkills[0] == 3 || m_selectedSkills[0] == 4)) {
+            // TELEPORT or HEAL is already selected, replace it with the new skill
             m_selectedSkills.clear();
             m_selectedSkills.push_back(skillType);
         }
         else {
-            // Normal skill selection (no heal involved)
+            // Normal skill selection (can combine split, power, explosive)
             m_selectedSkills.push_back(skillType);
         }
     }

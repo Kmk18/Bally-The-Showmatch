@@ -28,6 +28,22 @@ public:
         int currentPlayerIndex, float turnTimer,
         const Vector2& mousePosition);
 
+    // Render world-space UI (call with camera offset active)
+    void RenderWorldSpace(const std::vector<std::unique_ptr<Player>>& players,
+        int currentPlayerIndex, const Vector2& mousePosition);
+
+    // Render screen-space UI (call with camera offset reset to 0)
+    void RenderScreenSpace(const std::vector<std::unique_ptr<Player>>& players,
+        int currentPlayerIndex, float turnTimer,
+        const Vector2& cameraPos, float mapWidth, float mapHeight);
+
+    // Draw minimap
+    void DrawMinimap(const Vector2& cameraPos, float mapWidth, float mapHeight,
+        const std::vector<std::unique_ptr<Player>>& players);
+
+    // Check if mouse is clicking on minimap and return world position if so
+    bool HandleMinimapClick(const Vector2& mousePos, float mapWidth, float mapHeight, Vector2& outWorldPos);
+
     void ShowMessage(const std::string& message, float duration = 3.0f);
     void ShowGameOver(int winnerId);
     void ClearMessages();
@@ -74,4 +90,6 @@ private:
     static constexpr float ANGLE_INDICATOR_LENGTH = 80.0f;
     static constexpr float TURN_TIMER_WIDTH = 200.0f;
     static constexpr float TURN_TIMER_HEIGHT = 20.0f;
+    static constexpr float MINIMAP_WIDTH = 200.0f;
+    static constexpr float MINIMAP_HEIGHT = 150.0f;
 };

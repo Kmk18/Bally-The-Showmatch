@@ -43,11 +43,16 @@ public:
     SDL_Renderer* GetSDLRenderer() const { return m_renderer; }
     Vector2 GetWindowSize() const { return Vector2(static_cast<float>(m_windowWidth), static_cast<float>(m_windowHeight)); }
 
+    // Camera offset
+    void SetCameraOffset(const Vector2& offset) { m_cameraOffset = offset; }
+    Vector2 GetCameraOffset() const { return m_cameraOffset; }
+
 private:
     SDL_Renderer* m_renderer;
     SDL_Window* m_window;
     int m_windowWidth;
     int m_windowHeight;
     TTF_Font* m_font = nullptr;
+    Vector2 m_cameraOffset; // Camera offset for scrolling
 };
 

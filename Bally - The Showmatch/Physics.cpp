@@ -153,10 +153,10 @@ float Projectile::GetDamage() const {
 float Projectile::GetExplosionRadius() const {
     // Heal ball uses heal radius instead (returned separately)
     if (m_hasHeal) {
-        return 50.0f; // Heal AOE radius
+        return 80.0f; // Heal AOE radius
     }
 
-    float baseRadius = 20.0f;
+    float baseRadius = 50.0f;
 
     // Teleport ball has no explosion
     if (m_hasTeleportBall && !m_hasExplosiveBall && !m_hasPowerBall) {
@@ -165,7 +165,7 @@ float Projectile::GetExplosionRadius() const {
 
     // Explosive ball increases explosion radius
     if (m_hasExplosiveBall) {
-        baseRadius = 50.0f;
+        baseRadius = 80.0f;
     }
 
     return baseRadius;
@@ -263,7 +263,7 @@ void Physics::AddProjectileWithSkills(const Vector2& position, const Vector2& ve
 
     if (hasSplit) {
         // Create 3 projectiles with angle offsets
-        const float angleOffset = 10.0f;
+        const float angleOffset = 5.0f; // Reduced from 10.0f for tighter spread
         const float radianOffset = angleOffset * 3.14159265f / 180.0f;
 
         // Calculate angle from velocity

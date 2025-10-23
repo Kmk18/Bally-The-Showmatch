@@ -57,6 +57,33 @@ void UI::Render(const std::vector<std::unique_ptr<Player>>& players,
     DrawMessages();
 }
 
+void UI::RenderWorldSpace(const std::vector<std::unique_ptr<Player>>& players,
+    int currentPlayerIndex, const Vector2& mousePosition) {
+    // Draw aiming UI for current player (world-space: angle, power, trajectory)
+    if (currentPlayerIndex < players.size() && players[currentPlayerIndex]->IsAlive()) {
+        const Player& currentPlayer = *players[currentPlayerIndex];
+        if (currentPlayer.GetState() == PlayerState::AIMING) {
+            DrawAimingUI(currentPlayer, mousePosition);
+        }
+    }
+}
+
+void UI::RenderScreenSpace(const std::vector<std::unique_ptr<Player>>& players,
+    int currentPlayerIndex, float turnTimer,
+    const Vector2& cameraPos, float mapWidth, float mapHeight) {
+    m_currentPlayerIndex = currentPlayerIndex;
+    m_turnTimer = turnTimer;
+
+    // Draw HUD elements (screen-space)
+    DrawHUD(players);
+    DrawTurnTimer(turnTimer);
+    DrawCurrentPlayerIndicator(currentPlayerIndex);
+    DrawMessages();
+
+    // Draw minimap
+    DrawMinimap(cameraPos, mapWidth, mapHeight, players);
+}
+
 void UI::DrawHUD(const std::vector<std::unique_ptr<Player>>& players) {
     // Draw player info panels
     Vector2 startPos(10, 10);
@@ -352,4 +379,73 @@ void UI::ShowGameOver(int winnerId) {
 
 void UI::ClearMessages() {
     m_messages.clear();
+}
+
+void UI::DrawMinimap(const Vector2& cameraPos, float mapWidth, float mapHeight,
+    const std::vector<std::unique_ptr<Player>>& players) {
+    // Minimap position (bottom-right corner)
+    Vector2 minimapPos(1200 - MINIMAP_WIDTH - 10, 800 - MINIMAP_HEIGHT - 10);
+
+    // Draw minimap background
+    m_renderer->DrawRect(minimapPos, MINIMAP_WIDTH, MINIMAP_HEIGHT, Color(30, 30, 30, 200));
+    m_renderer->DrawRect(minimapPos, MINIMAP_WIDTH, MINIMAP_HEIGHT, Color(255, 255, 255, 255), false);
+
+    // Calculate scale factors
+    float scaleX = MINIMAP_WIDTH / mapWidth;
+    float scaleY = MINIMAP_HEIGHT / mapHeight;
+
+    // Draw players on minimap
+    for (const auto& player : players) {
+        if (player->IsAlive()) {
+            Vector2 playerWorldPos = player->GetPosition();
+            Vector2 playerMinimapPos(
+                minimapPos.x + playerWorldPos.x * scaleX,
+                minimapPos.y + playerWorldPos.y * scaleY
+            );
+            m_renderer->DrawCircle(playerMinimapPos, 3, player->GetColor());
+        }
+    }
+
+    // Draw camera viewport rectangle
+    float viewportWidth = 1200.0f; // Camera viewport width
+    float viewportHeight = 800.0f; // Camera viewport height
+
+    Vector2 cameraRectPos(
+        minimapPos.x + cameraPos.x * scaleX,
+        minimapPos.y + cameraPos.y * scaleY
+    );
+    Vector2 cameraRectSize(
+        viewportWidth * scaleX,
+        viewportHeight * scaleY
+    );
+
+    // Draw camera viewport outline
+    m_renderer->DrawRect(cameraRectPos, cameraRectSize.x, cameraRectSize.y,
+        Color(255, 255, 0, 150), false);
+}
+
+bool UI::HandleMinimapClick(const Vector2& mousePos, float mapWidth, float mapHeight, Vector2& outWorldPos) {
+    // Minimap position (bottom-right corner)
+    Vector2 minimapPos(1200 - MINIMAP_WIDTH - 10, 800 - MINIMAP_HEIGHT - 10);
+
+    // Check if mouse is within minimap bounds
+    if (mousePos.x >= minimapPos.x && mousePos.x <= minimapPos.x + MINIMAP_WIDTH &&
+        mousePos.y >= minimapPos.y && mousePos.y <= minimapPos.y + MINIMAP_HEIGHT) {
+
+        // Calculate scale factors
+        float scaleX = MINIMAP_WIDTH / mapWidth;
+        float scaleY = MINIMAP_HEIGHT / mapHeight;
+
+        // Convert minimap position to world position (centered on viewport)
+        float clickX = (mousePos.x - minimapPos.x) / scaleX;
+        float clickY = (mousePos.y - minimapPos.y) / scaleY;
+
+        // Center the camera on the clicked position (subtract half viewport to get top-left position)
+        outWorldPos.x = clickX - 600.0f; // 1200 / 2
+        outWorldPos.y = clickY - 400.0f; // 800 / 2
+
+        return true;
+    }
+
+    return false;
 }

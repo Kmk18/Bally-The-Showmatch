@@ -90,6 +90,7 @@ public:
     void AddProjectileWithSkills(const Vector2& position, const Vector2& velocity, const std::vector<int>& skills, int ownerId);
     void RemoveProjectile(Projectile* projectile);
     bool HasActiveProjectiles() const { return !m_projectiles.empty(); }
+    const std::vector<std::unique_ptr<Projectile>>& GetProjectiles() const { return m_projectiles; }
 
     void CheckCollisions(std::vector<std::unique_ptr<Player>>& players,
         std::vector<std::unique_ptr<SkillOrb>>& skillOrbs);

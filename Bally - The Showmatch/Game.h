@@ -11,6 +11,7 @@
 #include "SkillOrb.h"
 #include "Menu.h"
 #include "Map.h"
+#include "Camera.h"
 
 // Forward declarations
 class Projectile;
@@ -49,6 +50,7 @@ private:
     std::unique_ptr<Physics> m_physics;
     std::unique_ptr<UI> m_ui;
     std::unique_ptr<Menu> m_menu;
+    std::unique_ptr<Camera> m_camera;
 
     // Map system
     std::vector<MapInfo> m_availableMaps;
@@ -70,6 +72,11 @@ private:
     bool m_gameEnded;
     int m_winnerId;
     bool m_waitingForProjectiles; // Wait for projectiles to land before ending turn
+
+    // Camera delay after projectile lands
+    float m_cameraDelayTimer;
+    bool m_cameraDelayActive;
+    static constexpr float CAMERA_DELAY_AFTER_IMPACT = 0.8f; // 0.8 seconds delay
 
     // Game constants
     static constexpr int MAX_PLAYERS = 4;

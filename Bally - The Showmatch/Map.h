@@ -32,6 +32,10 @@ public:
     Terrain* GetTerrain() { return m_terrain.get(); }
     const Terrain* GetTerrain() const { return m_terrain.get(); }
 
+    // Get map dimensions (from terrain)
+    int GetWidth() const { return m_terrain ? m_terrain->GetWidth() : 1200; }
+    int GetHeight() const { return m_terrain ? m_terrain->GetHeight() : 800; }
+
     // Drawing
     void DrawBackground(Renderer* renderer);
     void DrawTerrain(Renderer* renderer);

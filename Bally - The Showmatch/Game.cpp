@@ -9,7 +9,8 @@
 Game::Game() : m_window(nullptr), m_running(false), m_lastFrameTime(0.0f),
 m_gameState(GameState::MAIN_MENU), m_gameMode(GameMode::FREE_FOR_ALL), m_numPlayers(4),
 m_currentPlayerIndex(0), m_turnTimer(TURN_DURATION), m_turnCounter(0),
-m_gameStarted(false), m_gameEnded(false), m_winnerId(-1), m_waitingForProjectiles(false) {
+m_gameStarted(false), m_gameEnded(false), m_winnerId(-1), m_waitingForProjectiles(false),
+m_cameraDelayTimer(0.0f), m_cameraDelayActive(false) {
 }
 
 Game::~Game() {
@@ -41,6 +42,7 @@ bool Game::Initialize() {
     m_physics = std::make_unique<Physics>();
     m_ui = std::make_unique<UI>(m_renderer.get());
     m_menu = std::make_unique<Menu>(m_renderer.get());
+    m_camera = std::make_unique<Camera>(1200.0f, 800.0f);
 
     // Scan for available maps
     // Path relative to the project source directory
@@ -174,6 +176,117 @@ void Game::Update(float deltaTime) {
         for (auto& orb : m_skillOrbs) {
             orb->Update(deltaTime);
         }
+
+        // Check for minimap click (left mouse button)
+        Vector2 mousePos = m_inputManager->GetMousePosition();
+        if (m_inputManager->IsMouseButtonPressed(0)) { // Left mouse button
+            Vector2 worldPos;
+            if (m_ui->HandleMinimapClick(mousePos, m_currentMap->GetWidth(), m_currentMap->GetHeight(), worldPos)) {
+                m_camera->SetManualControl(true);
+                m_camera->SetCameraPosition(worldPos);
+            }
+        }
+
+        // Check for manual camera controls (WASD)
+        Vector2 cameraMovement(0, 0);
+        bool manualCameraInput = false;
+
+        if (m_inputManager->IsKeyPressed(SDL_SCANCODE_W)) {
+            cameraMovement.y -= 1.0f;
+            manualCameraInput = true;
+        }
+        if (m_inputManager->IsKeyPressed(SDL_SCANCODE_S)) {
+            cameraMovement.y += 1.0f;
+            manualCameraInput = true;
+        }
+        if (m_inputManager->IsKeyPressed(SDL_SCANCODE_A)) {
+            cameraMovement.x -= 1.0f;
+            manualCameraInput = true;
+        }
+        if (m_inputManager->IsKeyPressed(SDL_SCANCODE_D)) {
+            cameraMovement.x += 1.0f;
+            manualCameraInput = true;
+        }
+
+        // Enable/disable manual control based on input
+        if (manualCameraInput) {
+            m_camera->SetManualControl(true);
+            if (cameraMovement.Length() > 0) {
+                m_camera->MoveCamera(cameraMovement.Normalized(), deltaTime);
+            }
+        } else if (!m_inputManager->IsMouseButtonPressed(0)) {
+            // Only disable manual control if not holding mouse button
+            m_camera->SetManualControl(false);
+        }
+
+        // Update camera delay timer if active
+        if (m_cameraDelayActive) {
+            m_cameraDelayTimer -= deltaTime;
+            if (m_cameraDelayTimer <= 0.0f) {
+                m_cameraDelayActive = false;
+            }
+        }
+
+        // Update camera to follow active player or projectiles (if not in manual mode)
+        Vector2 cameraTarget;
+        bool hasCameraTarget = false;
+
+        // If there are active projectiles, follow them in order
+        const auto& projectiles = m_physics->GetProjectiles();
+        if (!projectiles.empty()) {
+            // Reset camera delay - projectiles are still active
+            m_cameraDelayActive = false;
+
+            // For split projectiles (3 projectiles), follow in order: middle (0), bottom (2), upper (1)
+            // For other projectiles, just follow the first one
+            Projectile* targetProjectile = nullptr;
+
+            if (projectiles.size() == 3 && projectiles[0]->HasSplit()) {
+                // Split projectile - follow in specific order
+                if (projectiles[0]->IsActive()) {
+                    targetProjectile = projectiles[0].get(); // Middle
+                }
+                else if (projectiles.size() > 2 && projectiles[2]->IsActive()) {
+                    targetProjectile = projectiles[2].get(); // Bottom (lower)
+                }
+                else if (projectiles.size() > 1 && projectiles[1]->IsActive()) {
+                    targetProjectile = projectiles[1].get(); // Upper
+                }
+            }
+            else {
+                // Non-split or other case - follow first active projectile
+                for (const auto& proj : projectiles) {
+                    if (proj->IsActive()) {
+                        targetProjectile = proj.get();
+                        break;
+                    }
+                }
+            }
+
+            if (targetProjectile) {
+                cameraTarget = targetProjectile->GetPosition();
+                hasCameraTarget = true;
+            }
+        }
+        else if (!m_cameraDelayActive) {
+            // No projectiles and no delay - start delay timer
+            if (m_waitingForProjectiles) {
+                m_cameraDelayActive = true;
+                m_cameraDelayTimer = CAMERA_DELAY_AFTER_IMPACT;
+            }
+        }
+
+        // Only move camera back to player after delay expires
+        if (!hasCameraTarget && !m_cameraDelayActive && m_currentPlayerIndex < m_players.size()) {
+            // No projectiles and delay expired - follow the current player
+            cameraTarget = m_players[m_currentPlayerIndex]->GetPosition();
+            hasCameraTarget = true;
+        }
+
+        if (hasCameraTarget) {
+            m_camera->SetTarget(cameraTarget);
+        }
+        m_camera->Update(deltaTime);
 
         // Update UI
         m_ui->Update(deltaTime);
@@ -472,6 +585,9 @@ void Game::Render() {
         m_gameState == GameState::SETTINGS || m_gameState == GameState::SOUND_SETTINGS ||
         m_gameState == GameState::KEYBIND_SETTINGS) {
 
+        // Set camera offset for world-space rendering
+        m_renderer->SetCameraOffset(m_camera->GetPosition());
+
         // Draw map background and terrain (always visible during gameplay)
         if (m_currentMap) {
             m_currentMap->DrawBackground(m_renderer.get());
@@ -498,8 +614,15 @@ void Game::Render() {
             }
         }
 
-        // Draw UI
-        m_ui->Render(m_players, m_currentPlayerIndex, m_turnTimer, Vector2(0, 0));
+        // Draw world-space UI elements (angle/power indicators, trajectory)
+        m_ui->RenderWorldSpace(m_players, m_currentPlayerIndex, Vector2(0, 0));
+
+        // Reset camera offset for screen-space UI rendering
+        m_renderer->SetCameraOffset(Vector2(0, 0));
+
+        // Draw screen-space UI (HUD, timer, messages, minimap)
+        m_ui->RenderScreenSpace(m_players, m_currentPlayerIndex, m_turnTimer,
+            m_camera->GetPosition(), m_currentMap->GetWidth(), m_currentMap->GetHeight());
 
         // Draw menu overlay if paused or in settings
         if (m_gameState == GameState::PAUSED || m_gameState == GameState::SETTINGS ||
@@ -536,8 +659,17 @@ void Game::StartGame() {
     // Set terrain in physics system
     m_physics->SetTerrain(m_currentMap->GetTerrain());
 
+    // Configure camera for the map size
+    m_camera->SetMapBounds(m_currentMap->GetWidth(), m_currentMap->GetHeight());
+
     // Create players based on selection
     CreatePlayers();
+
+    // Snap camera to the first player's position
+    if (!m_players.empty()) {
+        m_camera->SetTarget(m_players[0]->GetPosition());
+        m_camera->SnapToTarget();
+    }
 
     // Reset game state
     m_currentPlayerIndex = 0;

@@ -14,7 +14,7 @@ constexpr const T& clamp(const T& v, const T& lo, const T& hi) {
     return (v < lo) ? lo : (hi < v) ? hi : v;
 }
 
-Renderer::Renderer(SDL_Window* window) : m_renderer(nullptr), m_window(window), m_windowWidth(1200), m_windowHeight(800) {
+Renderer::Renderer(SDL_Window* window) : m_renderer(nullptr), m_window(window), m_windowWidth(1200), m_windowHeight(800), m_cameraOffset(0, 0) {
     SDL_GetWindowSize(window, &m_windowWidth, &m_windowHeight);
 }
 
@@ -78,8 +78,9 @@ void Renderer::Clear(const Color& color) {
 void Renderer::DrawCircle(const Vector2& center, float radius, const Color& color) {
     SetDrawColor(color);
 
-    int centerX = static_cast<int>(center.x);
-    int centerY = static_cast<int>(center.y);
+    // Apply camera offset
+    int centerX = static_cast<int>(center.x - m_cameraOffset.x);
+    int centerY = static_cast<int>(center.y - m_cameraOffset.y);
     int r = static_cast<int>(radius);
 
     for (int y = -r; y <= r; ++y) {
@@ -123,8 +124,12 @@ void Renderer::DrawCircle(const Vector2& center, float radius, const Color& colo
 void Renderer::DrawLine(const Vector2& start, const Vector2& end, const Color& color, float thickness) {
     SetDrawColor(color);
 
+    // Apply camera offset
+    Vector2 adjustedStart = start - m_cameraOffset;
+    Vector2 adjustedEnd = end - m_cameraOffset;
+
     // Simple line drawing with thickness
-    Vector2 direction = end - start;
+    Vector2 direction = adjustedEnd - adjustedStart;
     float length = direction.Length();
     if (length == 0) return;
 
@@ -132,7 +137,7 @@ void Renderer::DrawLine(const Vector2& start, const Vector2& end, const Color& c
     Vector2 perpendicular(-direction.y, direction.x);
 
     for (float t = 0; t <= length; t += 0.5f) {
-        Vector2 point = start + direction * t;
+        Vector2 point = adjustedStart + direction * t;
 
         // Draw thickness
         for (float offset = -thickness / 2; offset <= thickness / 2; offset += 0.5f) {
@@ -145,8 +150,9 @@ void Renderer::DrawLine(const Vector2& start, const Vector2& end, const Color& c
 void Renderer::DrawRect(const Vector2& position, float width, float height, const Color& color, bool filled) {
     SetDrawColor(color);
 
+    // Apply camera offset
     SDL_FRect rect = {
-        position.x, position.y, width, height
+        position.x - m_cameraOffset.x, position.y - m_cameraOffset.y, width, height
     };
 
     if (filled) {
@@ -282,10 +288,15 @@ void Renderer::DrawPlatform(const Vector2& position, float width, float height) 
 void Renderer::DrawProjectileTrajectory(const Vector2& start, const Vector2& velocity, float gravity, int steps) {
     Vector2 pos = start;
     Vector2 vel = velocity;
+    const float AIR_RESISTANCE = 0.98f; // Match projectile air resistance
 
     for (int i = 0; i < steps; ++i) {
-        Vector2 nextPos = pos + vel * (1.0f / 60.0f);
+        // Apply gravity
         vel.y += gravity * (1.0f / 60.0f);
+        // Apply air resistance (same as projectile)
+        vel = vel * AIR_RESISTANCE;
+        // Update position
+        Vector2 nextPos = pos + vel * (1.0f / 60.0f);
 
         if (i % 3 == 0) { // Draw every 3rd point
             DrawCircle(nextPos, 2.0f, Color(255, 255, 255, 100));
@@ -293,7 +304,7 @@ void Renderer::DrawProjectileTrajectory(const Vector2& start, const Vector2& vel
 
         pos = nextPos;
 
-        // Stop if trajectory goes too far
-        if (pos.x > m_windowWidth || pos.y > m_windowHeight) break;
+        // Stop if trajectory goes too far off screen
+        if (pos.x < -100 || pos.x > m_windowWidth + 100 || pos.y > m_windowHeight + 100) break;
     }
 }

@@ -96,8 +96,9 @@ void Terrain::Draw(Renderer* renderer) {
     }
 
     if (m_texture) {
-        // Draw the terrain texture at (0, 0)
-        SDL_FRect destRect = { 0, 0, (float)m_width, (float)m_height };
+        // Get camera offset from renderer and apply it
+        Vector2 cameraOffset = renderer->GetCameraOffset();
+        SDL_FRect destRect = { -cameraOffset.x, -cameraOffset.y, (float)m_width, (float)m_height };
         SDL_RenderTexture(renderer->GetSDLRenderer(), m_texture, nullptr, &destRect);
     }
 }
