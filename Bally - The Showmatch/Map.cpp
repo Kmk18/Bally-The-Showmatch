@@ -97,9 +97,17 @@ void Map::DrawBackground(Renderer* renderer) {
     }
 
     if (m_backgroundTexture) {
-        // Draw background scaled to window size
-        Vector2 windowSize = renderer->GetWindowSize();
-        SDL_FRect destRect = { 0, 0, windowSize.x, windowSize.y };
+        // Get camera offset from renderer and apply it (same as terrain)
+        // This makes background scroll with camera like terrain does
+        Vector2 cameraOffset = renderer->GetCameraOffset();
+        
+        // Get map dimensions (from terrain)
+        int mapWidth = GetWidth();
+        int mapHeight = GetHeight();
+        
+        // Draw background at world position with camera offset applied
+        // This matches how terrain is drawn
+        SDL_FRect destRect = { -cameraOffset.x, -cameraOffset.y, (float)mapWidth, (float)mapHeight };
         SDL_RenderTexture(renderer->GetSDLRenderer(), m_backgroundTexture, nullptr, &destRect);
     }
 }

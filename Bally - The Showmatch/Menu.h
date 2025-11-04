@@ -3,6 +3,7 @@
 #include <vector>
 #include <string>
 #include <functional>
+#include <SDL3/SDL.h>
 #include "Vector2.h"
 #include "Renderer.h"
 
@@ -83,6 +84,10 @@ private:
     Vector2 m_mousePosition;
     bool m_mouseClicked;
     
+    // Background image
+    SDL_Texture* m_backgroundTexture;
+    bool m_backgroundLoaded;
+    
     // Callbacks
     std::function<void()> m_onStartGame;
     std::function<void()> m_onExit;
@@ -105,6 +110,7 @@ private:
     void HandleButtonClicks();
     
     // Rendering
+    void LoadBackground();
     void DrawBackground();
     void DrawTitle();
     void DrawButtons();
