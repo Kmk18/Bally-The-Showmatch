@@ -84,43 +84,31 @@ void Game::CreatePlayers() {
         "Meep"    // Player 4 (reuse Meep for now)
     };
 
-    // Get map dimensions for diverse spawning
-    int mapWidth = m_currentMap ? m_currentMap->GetWidth() : 1200;
-    int mapHeight = m_currentMap ? m_currentMap->GetHeight() : 800;
-    
     // Create players based on menu selection
     int numPlayers = m_numPlayers;
     
-    // Minimum spacing between players to ensure diverse spread
-    float margin = 100.0f; // Margin from map edges
-    float usableWidth = static_cast<float>(mapWidth) - 2.0f * margin;
-
-    // Use random number generator for diverse spawning
-    std::random_device rd;
-    std::mt19937 gen(rd());
-    std::uniform_real_distribution<float> xDist(margin, static_cast<float>(mapWidth) - margin);
+    // Get actual map dimensions
+    float mapWidth = m_currentMap ? static_cast<float>(m_currentMap->GetWidth()) : 1200.0f;
+    float mapHeight = m_currentMap ? static_cast<float>(m_currentMap->GetHeight()) : 800.0f;
+    
+    // Spread players across the map with padding from edges
+    float padding = 100.0f; // Padding from map edges
+    float spawnAreaWidth = mapWidth - (padding * 2.0f); // Available width for spawning
+    float startX = padding; // Left edge of spawn area
 
     for (int i = 0; i < numPlayers; ++i) {
-        // Divide map into zones and place players in different zones
-        // This ensures diverse spreading across the map
-        float spawnZoneWidth = usableWidth / numPlayers;
-        float zoneStartX = margin + spawnZoneWidth * i;
-        float zoneEndX = margin + spawnZoneWidth * (i + 1);
+        // Distribute players evenly across the spawn area
+        float spacing = (numPlayers > 1) ? spawnAreaWidth / (numPlayers - 1) : 0.0f;
+        float x = startX + spacing * i;
         
-        // Add some randomness within the zone (but keep it centered)
-        float zoneCenterX = (zoneStartX + zoneEndX) * 0.5f;
-        float zoneRandomRange = spawnZoneWidth * 0.4f; // 40% randomness within zone
-        std::uniform_real_distribution<float> zoneDist(-zoneRandomRange * 0.5f, zoneRandomRange * 0.5f);
-        float x = zoneCenterX + zoneDist(gen);
-        
-        // Clamp to valid map bounds
-        x = std::max(margin, std::min(x, static_cast<float>(mapWidth) - margin));
+        // Clamp x to map bounds
+        x = std::max(padding, std::min(x, mapWidth - padding));
         
         // Find terrain height at spawn position
-        float startY = static_cast<float>(mapHeight * 0.7f); // Default fallback
+        float startY = mapHeight * 0.75f; // Default fallback (75% down the map)
         if (m_currentMap && m_currentMap->GetTerrain()) {
             int terrainY = m_currentMap->GetTerrain()->FindTopSolidPixel((int)x, 0);
-            if (terrainY >= 0 && terrainY < mapHeight) {
+            if (terrainY >= 0) {
                 // Position player so their feet (bottom) are on the ground
                 float playerRadius = 20.0f; // Default radius
                 startY = (float)terrainY - playerRadius;
@@ -570,43 +558,6 @@ void Game::CheckWinConditions() {
     }
 }
 
-void Game::RepositionPlayers() {
-    if (!m_currentMap || !m_currentMap->GetTerrain()) return;
-    
-    // Get map dimensions for diverse spawning
-    int mapWidth = m_currentMap->GetWidth();
-    int mapHeight = m_currentMap->GetHeight();
-    float margin = 100.0f;
-    float usableWidth = static_cast<float>(mapWidth) - 2.0f * margin;
-    
-    // Use random number generator for diverse spawning
-    std::random_device rd;
-    std::mt19937 gen(rd());
-    
-    for (size_t i = 0; i < m_players.size(); ++i) {
-        // Divide map into zones and place players in different zones
-        float spawnZoneWidth = usableWidth / m_players.size();
-        float zoneStartX = margin + spawnZoneWidth * i;
-        float zoneEndX = margin + spawnZoneWidth * (i + 1);
-        
-        // Add some randomness within the zone
-        float zoneCenterX = (zoneStartX + zoneEndX) * 0.5f;
-        float zoneRandomRange = spawnZoneWidth * 0.4f;
-        std::uniform_real_distribution<float> zoneDist(-zoneRandomRange * 0.5f, zoneRandomRange * 0.5f);
-        float x = zoneCenterX + zoneDist(gen);
-        
-        // Clamp to valid map bounds
-        x = std::max(margin, std::min(x, static_cast<float>(mapWidth) - margin));
-        
-        // Find terrain height at spawn position
-        int terrainY = m_currentMap->GetTerrain()->FindTopSolidPixel((int)x, 0);
-        if (terrainY >= 0 && terrainY < mapHeight) {
-            Vector2 newPos(x, (float)terrainY - m_players[i]->GetRadius());
-            m_players[i]->SetPosition(newPos);
-        }
-    }
-}
-
 void Game::ResetGame() {
     m_currentPlayerIndex = 0;
     m_turnTimer = TURN_DURATION;
@@ -616,13 +567,48 @@ void Game::ResetGame() {
     m_winnerId = -1;
     m_waitingForProjectiles = false;
 
-    // Reset all players
-    for (auto& player : m_players) {
-        player->ResetForNewGame();
-    }
+    // Get actual map dimensions for respawning
+    float mapWidth = m_currentMap ? static_cast<float>(m_currentMap->GetWidth()) : 1200.0f;
+    float mapHeight = m_currentMap ? static_cast<float>(m_currentMap->GetHeight()) : 800.0f;
     
-    // Reposition players across the map using diverse spawning
-    RepositionPlayers();
+    // Spread players across the map with padding from edges
+    float padding = 100.0f;
+    float spawnAreaWidth = mapWidth - (padding * 2.0f);
+    float startX = padding;
+
+    // Reset all players and respawn them across the map
+    for (size_t i = 0; i < m_players.size(); ++i) {
+        m_players[i]->ResetForNewGame();
+        
+        // Calculate new spawn position based on map size
+        float spacing = (m_players.size() > 1) ? spawnAreaWidth / (m_players.size() - 1) : 0.0f;
+        float x = startX + spacing * i;
+        
+        // Clamp x to map bounds
+        x = std::max(padding, std::min(x, mapWidth - padding));
+        
+        // Find terrain height at spawn position
+        float startY = mapHeight * 0.75f; // Default fallback
+        if (m_currentMap && m_currentMap->GetTerrain()) {
+            int terrainY = m_currentMap->GetTerrain()->FindTopSolidPixel((int)x, 0);
+            if (terrainY >= 0) {
+                startY = (float)terrainY - m_players[i]->GetRadius();
+            }
+        }
+        
+        // Set player position on terrain
+        Vector2 playerPos(x, startY);
+        m_players[i]->SetPosition(playerPos);
+        
+        // Ensure player is snapped to terrain
+        if (m_currentMap && m_currentMap->GetTerrain()) {
+            int terrainY = m_currentMap->GetTerrain()->FindTopSolidPixel((int)playerPos.x, 0);
+            if (terrainY >= 0) {
+                playerPos.y = (float)terrainY - m_players[i]->GetRadius();
+                m_players[i]->SetPosition(playerPos);
+            }
+        }
+    }
 
     // Clear projectiles and skill orbs
     m_skillOrbs.clear();

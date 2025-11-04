@@ -37,7 +37,6 @@ private:
     void ResetGame();
     void CreatePlayers();
     void SetupPlayerInputs();
-    void RepositionPlayers(); // Reposition existing players across the map
     void StartGame();
     void ReturnToMenu();
 
@@ -83,3 +82,4 @@ private:
     static constexpr int MAX_PLAYERS = 4;
     static constexpr int MIN_PLAYERS = 2;
 };
+

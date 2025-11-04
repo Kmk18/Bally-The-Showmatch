@@ -3,6 +3,7 @@
 #include <SDL3_ttf/SDL_ttf.h>
 #include <cmath>
 #include <algorithm>
+#include <iostream>
 
 #ifndef M_PI
 #define M_PI 3.14159265358979323846
@@ -44,15 +45,30 @@ bool Renderer::Initialize() {
     }
 
     if (!m_font) {
+        // Try to load Pixelify Sans font from Google Fonts
+        // Font files are located in the fonts/ folder at project root
         const char* candidateFonts[] = {
+            "../fonts/PixelifySans-Regular.ttf",  // From x64/Debug/ executable location
+            "../fonts/PixelifySans-Medium.ttf",
+            "../fonts/PixelifySans-SemiBold.ttf",
+            "../fonts/PixelifySans-Bold.ttf",
+            "fonts/PixelifySans-Regular.ttf",      // From project root
+            "fonts/PixelifySans-Medium.ttf",
+            "fonts/PixelifySans-SemiBold.ttf",
+            "fonts/PixelifySans-Bold.ttf",
+            // Fallback to Windows fonts if Pixelify Sans not found
             "C:\\Windows\\Fonts\\segoeui.ttf",
             "C:\\Windows\\Fonts\\arial.ttf",
             "C:\\Windows\\Fonts\\tahoma.ttf"
         };
         for (const char* path : candidateFonts) {
             if (LoadFont(path, 16)) {
+                std::cout << "Loaded font: " << path << std::endl;
                 break;
             }
+        }
+        if (!m_font) {
+            std::cerr << "Warning: Failed to load any font!" << std::endl;
         }
     }
     return true;
