@@ -56,7 +56,13 @@ void Menu::Update(float deltaTime, const Vector2& mousePosition, bool mouseClick
 }
 
 void Menu::Render() {
-    DrawBackground();
+    // For pause menu, draw black overlay instead of background
+    if (m_currentState == GameState::PAUSED) {
+        // Draw 70% opacity black overlay (0.7 * 255 = 178.5 ≈ 179)
+        m_renderer->DrawRect(Vector2::Zero(), 1200, 800, Color(0, 0, 0, 179));
+    } else {
+        DrawBackground();
+    }
     DrawButtons();
 }
 
@@ -235,20 +241,15 @@ void Menu::CreateMapSelectionMenu() {
 
 void Menu::CreatePauseMenu() {
     float screenCenterX = 600.0f;
-    float startY = 400.0f;
+    float startY = 350.0f;
 
     // Resume button - centered horizontally
     AddButton("Resume", Vector2(screenCenterX - BUTTON_WIDTH / 2.0f, startY), 
               Vector2(BUTTON_WIDTH, BUTTON_HEIGHT),
               [this]() { SetState(GameState::IN_GAME); });
 
-    // Settings button - centered horizontally
-    AddButton("Settings", Vector2(screenCenterX - BUTTON_WIDTH / 2.0f, startY + BUTTON_SPACING),
-              Vector2(BUTTON_WIDTH, BUTTON_HEIGHT),
-              [this]() { SetState(GameState::SETTINGS); });
-
     // Exit to Main Menu button - centered horizontally (pink)
-    AddButton("Exit to Main Menu", Vector2(screenCenterX - BUTTON_WIDTH / 2.0f, startY + BUTTON_SPACING * 2),
+    AddButton("Exit to Main Menu", Vector2(screenCenterX - BUTTON_WIDTH / 2.0f, startY + BUTTON_SPACING),
               Vector2(BUTTON_WIDTH, BUTTON_HEIGHT),
               [this]() { SetState(GameState::MAIN_MENU); }, 2);  // 2 = pink
 }

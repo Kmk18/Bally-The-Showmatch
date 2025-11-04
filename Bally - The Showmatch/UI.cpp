@@ -1,10 +1,13 @@
 #include "UI.h"
 #include "SkillOrb.h"
 #include "Player.h"
+#include <SDL3/SDL.h>
+#include <SDL3_image/SDL_image.h>
 #include <cmath>
 #include <algorithm>
 #include <sstream>
 #include <iomanip>
+#include <iostream>
 
 // Define M_PI if not defined
 #ifndef M_PI
@@ -17,10 +20,20 @@ constexpr const T& clamp(const T& v, const T& lo, const T& hi) {
     return (v < lo) ? lo : (hi < v) ? hi : v;
 }
 
-UI::UI(Renderer* renderer) : m_renderer(renderer), m_turnTimer(20.0f), m_currentPlayerIndex(0) {
+UI::UI(Renderer* renderer) : m_renderer(renderer), m_turnTimer(20.0f), m_currentPlayerIndex(0),
+    m_inventorySlotTexture(nullptr), m_selectedInventorySlotTexture(nullptr), m_inventorySlotWidth(0), m_inventorySlotHeight(0) {
+    LoadInventorySlotTexture();
 }
 
 UI::~UI() {
+    if (m_inventorySlotTexture) {
+        SDL_DestroyTexture(m_inventorySlotTexture);
+        m_inventorySlotTexture = nullptr;
+    }
+    if (m_selectedInventorySlotTexture) {
+        SDL_DestroyTexture(m_selectedInventorySlotTexture);
+        m_selectedInventorySlotTexture = nullptr;
+    }
 }
 
 void UI::Update(float deltaTime) {
@@ -79,6 +92,12 @@ void UI::RenderScreenSpace(const std::vector<std::unique_ptr<Player>>& players,
     DrawTurnTimer(turnTimer);
     DrawCurrentPlayerIndicator(currentPlayerIndex);
     DrawMessages();
+
+    // Draw inventory (screen-space, always visible for current player)
+    if (currentPlayerIndex < players.size() && players[currentPlayerIndex]->IsAlive()) {
+        Vector2 inventoryPos(900, 50); // Fixed screen position
+        DrawInventory(*players[currentPlayerIndex], inventoryPos);
+    }
 
     // Draw minimap
     DrawMinimap(cameraPos, mapWidth, mapHeight, players);
@@ -198,10 +217,6 @@ void UI::DrawAimingUI(const Player& player, const Vector2& mousePosition) {
     m_renderer->DrawText(helpPos + Vector2(0, 45), "Space: Power (Hold)", Color(255, 255, 255, 255));
     m_renderer->DrawText(helpPos + Vector2(0, 60), "Enter: Throw", Color(255, 255, 255, 255));
     m_renderer->DrawText(helpPos + Vector2(0, 75), "1/2/3/4: Select Skills", Color(255, 255, 255, 255));
-
-    // Draw inventory
-    Vector2 inventoryPos(900, 50);
-    DrawInventory(player, inventoryPos);
 }
 
 void UI::DrawInventory(const Player& player, const Vector2& position) {
@@ -215,27 +230,41 @@ void UI::DrawInventory(const Player& player, const Vector2& position) {
     for (int i = 0; i < 4; ++i) {
         Vector2 slotPos = position + Vector2(i * 60, 20);
 
-        // Draw slot background
-        Color slotColor = Color(50, 50, 50, 255);
+        // Check if this skill is selected
+        bool isSelected = false;
         if (i < inventory.size()) {
-            // Check if this skill is selected
             int skillType = inventory[i];
-            bool isSelected = std::find(selectedSkills.begin(), selectedSkills.end(), skillType) != selectedSkills.end();
+            isSelected = std::find(selectedSkills.begin(), selectedSkills.end(), skillType) != selectedSkills.end();
+        }
 
+        // Draw inventory slot texture if loaded (use selected texture if skill is selected)
+        SDL_Texture* textureToUse = isSelected && m_selectedInventorySlotTexture ? 
+            m_selectedInventorySlotTexture : m_inventorySlotTexture;
+        
+        if (textureToUse && m_inventorySlotWidth > 0 && m_inventorySlotHeight > 0) {
+            // Draw slot texture at fixed size (50x50)
+            SDL_FRect destRect = { slotPos.x, slotPos.y, 50.0f, 50.0f };
+            SDL_RenderTexture(m_renderer->GetSDLRenderer(), textureToUse, nullptr, &destRect);
+        } else {
+            // Fallback: Draw slot background if texture not loaded
+            Color slotColor = Color(50, 50, 50, 255);
             if (isSelected) {
                 slotColor = Color(255, 255, 0, 180); // Yellow highlight for selected
             }
-            else {
+            else if (i < inventory.size()) {
                 slotColor = Color(70, 70, 70, 255);
             }
+            m_renderer->DrawRect(slotPos, 50, 50, slotColor);
+            m_renderer->DrawRect(slotPos, 50, 50, Color(255, 255, 255, 255), false);
         }
 
-        m_renderer->DrawRect(slotPos, 50, 50, slotColor);
-        m_renderer->DrawRect(slotPos, 50, 50, Color(255, 255, 255, 255), false);
-
-        // Draw key number
+        // Draw key number (bottom left of slot)
         std::string keyText = std::to_string(i + 1);
-        m_renderer->DrawText(slotPos + Vector2(5, 5), keyText.c_str(), Color(200, 200, 200, 255));
+        int textWidth = 0, textHeight = 0;
+        m_renderer->GetTextSize(keyText.c_str(), &textWidth, &textHeight);
+        float offset = 5.0f; // Padding from edge
+        Vector2 textPos = slotPos + Vector2(offset, 53.0f - textHeight - offset);
+        m_renderer->DrawText(textPos, keyText.c_str(), Color(255, 255, 255, 255));
 
         // Draw skill icon if slot is occupied
         if (i < inventory.size()) {
@@ -448,4 +477,54 @@ bool UI::HandleMinimapClick(const Vector2& mousePos, float mapWidth, float mapHe
     }
 
     return false;
+}
+
+void UI::LoadInventorySlotTexture() {
+    // Load regular inventory slot texture
+    std::string texturePath = "../assets/inventory_slot.png";
+    SDL_Surface* surface = IMG_Load(texturePath.c_str());
+    if (!surface) {
+        std::cerr << "Failed to load inventory slot texture: " << texturePath << " - " << SDL_GetError() << std::endl;
+    } else {
+        m_inventorySlotWidth = surface->w;
+        m_inventorySlotHeight = surface->h;
+        m_inventorySlotTexture = SDL_CreateTextureFromSurface(m_renderer->GetSDLRenderer(), surface);
+        SDL_DestroySurface(surface);
+
+        if (!m_inventorySlotTexture) {
+            std::cerr << "Failed to create inventory slot texture: " << SDL_GetError() << std::endl;
+            m_inventorySlotWidth = 0;
+            m_inventorySlotHeight = 0;
+        } else {
+            std::cout << "Inventory slot texture loaded successfully (" << m_inventorySlotWidth << "x" << m_inventorySlotHeight << ")" << std::endl;
+        }
+    }
+
+    // Load selected inventory slot texture
+    std::string selectedTexturePath = "../assets/selected_inventory_slot.png";
+    SDL_Surface* selectedSurface = IMG_Load(selectedTexturePath.c_str());
+    if (!selectedSurface) {
+        std::cerr << "Failed to load selected inventory slot texture: " << selectedTexturePath << " - " << SDL_GetError() << std::endl;
+    } else {
+        // Verify dimensions match (should be same size as regular texture)
+        if (m_inventorySlotWidth > 0 && m_inventorySlotHeight > 0) {
+            if (selectedSurface->w != m_inventorySlotWidth || selectedSurface->h != m_inventorySlotHeight) {
+                std::cerr << "Warning: Selected inventory slot texture size (" << selectedSurface->w << "x" << selectedSurface->h 
+                          << ") doesn't match regular texture size (" << m_inventorySlotWidth << "x" << m_inventorySlotHeight << ")" << std::endl;
+            }
+        } else {
+            // If regular texture failed, use selected texture dimensions
+            m_inventorySlotWidth = selectedSurface->w;
+            m_inventorySlotHeight = selectedSurface->h;
+        }
+
+        m_selectedInventorySlotTexture = SDL_CreateTextureFromSurface(m_renderer->GetSDLRenderer(), selectedSurface);
+        SDL_DestroySurface(selectedSurface);
+
+        if (!m_selectedInventorySlotTexture) {
+            std::cerr << "Failed to create selected inventory slot texture: " << SDL_GetError() << std::endl;
+        } else {
+            std::cout << "Selected inventory slot texture loaded successfully" << std::endl;
+        }
+    }
 }

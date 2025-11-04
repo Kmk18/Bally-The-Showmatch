@@ -5,6 +5,7 @@
 #include <memory>
 #include "Vector2.h"
 #include "Renderer.h"
+#include <SDL3/SDL.h>
 
 class Player;
 class Renderer;
@@ -56,6 +57,12 @@ private:
     float m_turnTimer;
     int m_currentPlayerIndex;
 
+    // Inventory slot textures
+    SDL_Texture* m_inventorySlotTexture;
+    SDL_Texture* m_selectedInventorySlotTexture;
+    int m_inventorySlotWidth;
+    int m_inventorySlotHeight;
+
     // Message system
     struct Message {
         std::string text;
@@ -81,6 +88,9 @@ private:
     void DrawPlayerSkills(const Player& player, const Vector2& position);
     std::string GetSkillName(SkillType skillType) const;
     Color GetSkillColor(SkillType skillType) const;
+
+    // Texture loading
+    void LoadInventorySlotTexture();
 
     // Constants
     static constexpr float MESSAGE_DURATION = 3.0f;

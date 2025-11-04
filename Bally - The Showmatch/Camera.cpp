@@ -7,7 +7,7 @@ Camera::Camera(float viewportWidth, float viewportHeight)
     , m_target(viewportWidth / 2.0f, viewportHeight / 2.0f)
     , m_viewportWidth(viewportWidth)
     , m_viewportHeight(viewportHeight)
-    , m_followSpeed(2000.0f)  // 2000 pixels per second (increased for smoother camera movement)
+    , m_followSpeed(3000.0f)
     , m_mapWidth(viewportWidth)
     , m_mapHeight(viewportHeight)
     , m_manualControl(false)
@@ -27,7 +27,6 @@ void Camera::Update(float deltaTime) {
         m_target.y - m_viewportHeight / 2.0f
     );
 
-    // Smooth follow using lerp
     Vector2 direction = desiredPosition - m_position;
     float distance = direction.Length();
 
