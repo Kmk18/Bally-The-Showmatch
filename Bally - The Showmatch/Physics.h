@@ -7,6 +7,7 @@ class Player;
 class Projectile;
 class SkillOrb;
 class Terrain;
+class ExplosionAnimation;
 
 struct CollisionInfo {
     bool hasCollision;
@@ -111,9 +112,32 @@ public:
     // Set the terrain for collision detection
     void SetTerrain(Terrain* terrain) { m_terrain = terrain; }
 
+    // Set renderer for explosion animations (needed to load sprites)
+    void SetRenderer(class Renderer* renderer) { m_renderer = renderer; }
+
+    // Debug visualization
+    void SetDebugDrawContours(bool enable) { m_debugDrawContours = enable; }
+    bool GetDebugDrawContours() const { return m_debugDrawContours; }
+
 private:
     std::vector<std::unique_ptr<Projectile>> m_projectiles;
+    std::vector<std::unique_ptr<ExplosionAnimation>> m_explosions;
     Terrain* m_terrain; // Reference to terrain for collision detection
+    class Renderer* m_renderer; // Reference to renderer for explosion sprite loading
+
+    // Create explosion animation at position
+    void CreateExplosion(const Vector2& position, float radius, bool isBigExplosion);
+
+    // Debug visualization
+    bool m_debugDrawContours;
+    struct DebugContourData {
+        Vector2 playerPos;
+        float playerRadius;
+        std::vector<Vector2> samplePoints;
+        std::vector<Vector2> groundPoints;
+        int groundY;
+    };
+    std::vector<DebugContourData> m_debugContourData;
 
     // World bounds
     float m_platformWidth;

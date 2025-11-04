@@ -3,6 +3,7 @@
 #include "SkillOrb.h"
 #include "Terrain.h"
 #include "UI.h"
+#include "ExplosionAnimation.h"
 #include <cmath>
 #include <algorithm>
 
@@ -156,7 +157,7 @@ float Projectile::GetExplosionRadius() const {
         return 80.0f; // Heal AOE radius
     }
 
-    float baseRadius = 50.0f;
+    float baseRadius = 30.0f;
 
     // Teleport ball has no explosion
     if (m_hasTeleportBall && !m_hasExplosiveBall && !m_hasPowerBall) {
@@ -165,7 +166,7 @@ float Projectile::GetExplosionRadius() const {
 
     // Explosive ball increases explosion radius
     if (m_hasExplosiveBall) {
-        baseRadius = 80.0f;
+        baseRadius = 70.0f;
     }
 
     return baseRadius;
@@ -216,12 +217,13 @@ bool Projectile::DamagesTerrain() const {
     return true;
 }
 
-Physics::Physics() : m_terrain(nullptr), m_platformWidth(PLATFORM_WIDTH), m_platformHeight(PLATFORM_HEIGHT),
-m_platformPosition(200.0f, 650.0f) {
+Physics::Physics() : m_terrain(nullptr), m_renderer(nullptr), m_platformWidth(PLATFORM_WIDTH), m_platformHeight(PLATFORM_HEIGHT),
+m_platformPosition(200.0f, 650.0f), m_debugDrawContours(true) {
 }
 
 Physics::~Physics() {
     m_projectiles.clear();
+    m_explosions.clear();
 }
 
 void Physics::Update(float deltaTime) {
@@ -236,6 +238,18 @@ void Physics::Update(float deltaTime) {
             [](const std::unique_ptr<Projectile>& p) { return !p->IsActive(); }),
         m_projectiles.end()
     );
+
+    // Update explosions
+    for (auto& explosion : m_explosions) {
+        explosion->Update(deltaTime);
+    }
+
+    // Remove finished explosions
+    m_explosions.erase(
+        std::remove_if(m_explosions.begin(), m_explosions.end(),
+            [](const std::unique_ptr<ExplosionAnimation>& e) { return e->IsFinished(); }),
+        m_explosions.end()
+    );
 }
 
 void Physics::Draw(class Renderer* renderer) {
@@ -243,6 +257,45 @@ void Physics::Draw(class Renderer* renderer) {
     for (const auto& projectile : m_projectiles) {
         if (projectile->IsActive()) {
             projectile->Draw(renderer);
+        }
+    }
+
+    // Draw all active explosions
+    for (const auto& explosion : m_explosions) {
+        if (!explosion->IsFinished()) {
+            explosion->Draw(renderer);
+        }
+    }
+
+    // Draw debug contour visualization
+    if (m_debugDrawContours) {
+        for (const auto& data : m_debugContourData) {
+            // Draw sample points (vertical lines from player bottom)
+            for (const auto& samplePoint : data.samplePoints) {
+                renderer->DrawLine(samplePoint,
+                    Vector2(samplePoint.x, samplePoint.y - data.playerRadius * 2.5f),
+                    Color(255, 255, 0, 128)); // Yellow semi-transparent
+            }
+
+            // Draw ground detection points (where terrain was found)
+            for (const auto& groundPoint : data.groundPoints) {
+                renderer->DrawCircle(groundPoint, 3.0f, Color(0, 255, 0, 255)); // Green circles
+            }
+
+            // Draw the highest ground point (the one actually used)
+            if (data.groundY >= 0) {
+                renderer->DrawCircle(Vector2(data.playerPos.x, (float)data.groundY),
+                    5.0f, Color(255, 0, 0, 255)); // Red circle for active ground point
+
+                // Draw line from player bottom to ground point
+                renderer->DrawLine(
+                    Vector2(data.playerPos.x, data.playerPos.y + data.playerRadius),
+                    Vector2(data.playerPos.x, (float)data.groundY),
+                    Color(255, 0, 0, 255)); // Red line
+            }
+
+            // Draw player bounding circle
+            renderer->DrawCircle(data.playerPos, data.playerRadius, Color(0, 255, 255, 128)); // Cyan
         }
     }
 }
@@ -299,6 +352,9 @@ void Physics::RemoveProjectile(Projectile* projectile) {
 
 void Physics::CheckCollisions(std::vector<std::unique_ptr<Player>>& players,
     std::vector<std::unique_ptr<SkillOrb>>& skillOrbs) {
+    // Clear debug data from previous frame
+    m_debugContourData.clear();
+
     CheckProjectileCollisions(players, skillOrbs);
 
     // Only use terrain collision (no platform)
@@ -369,6 +425,10 @@ void Physics::CheckProjectileCollisions(std::vector<std::unique_ptr<Player>>& pl
                     ApplyExplosion(projectile->GetPosition(), projectile->GetExplosionRadius(),
                         projectile->GetExplosionForce(), players);
 
+                    // Create explosion animation (use big explosion if explosive buff, otherwise small)
+                    bool isBigExplosion = projectile->HasExplosiveBall();
+                    CreateExplosion(projectile->GetPosition(), projectile->GetExplosionRadius(), isBigExplosion);
+
                     // Destroy terrain only if projectile damages terrain
                     if (m_terrain && projectile->DamagesTerrain()) {
                         m_terrain->DestroyCircle(projectile->GetPosition(), projectile->GetExplosionRadius());
@@ -416,6 +476,10 @@ void Physics::CheckProjectileCollisions(std::vector<std::unique_ptr<Player>>& pl
                     if (projectile->GetExplosionRadius() > 0) {
                         ApplyExplosion(projectile->GetPosition(), projectile->GetExplosionRadius(),
                             projectile->GetExplosionForce(), players);
+
+                        // Create explosion animation (use big explosion if explosive buff, otherwise small)
+                        bool isBigExplosion = projectile->HasExplosiveBall();
+                        CreateExplosion(projectile->GetPosition(), projectile->GetExplosionRadius(), isBigExplosion);
 
                         // Destroy terrain only if projectile damages terrain
                         if (m_terrain && projectile->DamagesTerrain()) {
@@ -569,74 +633,189 @@ void Physics::CheckPlayerTerrainCollisions(std::vector<std::unique_ptr<Player>>&
         if (!player->IsAlive()) continue;
 
         Vector2 pos = player->GetPosition();
+        Vector2 velocity = player->GetVelocity();
         float radius = player->GetRadius();
 
         // Check if player fell into the void (below screen)
-        if (pos.y > 850.0f) { 
+        if (pos.y > 850.0f) {
             player->TakeDamage(player->GetMaxHealth());  // Kill the player
             continue;
         }
 
-        // Check if player is overlapping with solid terrain
+        // High-accuracy ground following system
         bool onGround = false;
-        Vector2 correction(0, 0);
-
-        // Check bottom of player (feet) - sample multiple points for stability
-        int bottomY = (int)(pos.y + radius);
-
-        // Sample 3 points across the bottom of the player for more stable ground detection
-        int leftX = (int)(pos.x - radius * 0.5f);
-        int centerX = (int)pos.x;
-        int rightX = (int)(pos.x + radius * 0.5f);
-
         int groundY = -1;
 
-        // Find highest solid pixel among the samples
-        int leftGround = m_terrain->FindTopSolidPixel(leftX, bottomY - (int)radius);
-        int centerGround = m_terrain->FindTopSolidPixel(centerX, bottomY - (int)radius);
-        int rightGround = m_terrain->FindTopSolidPixel(rightX, bottomY - (int)radius);
+        // Sample many points across player's width for maximum accuracy
+        const int sampleCount = 11; // Increased to 11 for very accurate terrain detection
+        const float sampleWidthMultiplier = 0.8f; // Adjust this to match character sprite width (0.5-1.5)
+        const float maxUpwardSearch = radius * 0.5f; // Only search slightly above player (prevent ceiling detection)
+        int samples[sampleCount];
+        for (int i = 0; i < sampleCount; i++) {
+            float t = (i / (float)(sampleCount - 1)) - 0.5f; // -0.5 to 0.5
+            int sampleX = (int)(pos.x + t * radius * sampleWidthMultiplier); // Cover character width
+            int startY = (int)(pos.y + radius); // Start from bottom of player
 
-        // Use the highest ground found
-        if (leftGround >= 0 && (groundY < 0 || leftGround < groundY)) groundY = leftGround;
-        if (centerGround >= 0 && (groundY < 0 || centerGround < groundY)) groundY = centerGround;
-        if (rightGround >= 0 && (groundY < 0 || rightGround < groundY)) groundY = rightGround;
-
-        if (groundY >= 0) {
-            float distanceToGround = groundY - (pos.y + radius);
-
-            // If player is overlapping or very close to ground
-            if (distanceToGround < 3.0f) {
-                onGround = true;
-                // Smooth the correction to prevent jittering
-                correction.y = distanceToGround * 0.5f;  // Smoother adjustment
-            }
+            // Search from slightly above player down to far below
+            // This prevents detecting ceiling/overhang in hollow areas
+            // Start search from top of screen (0) to ensure we find ground even if player is far above
+            int searchStartY = std::max(0, (int)(startY - maxUpwardSearch));
+            samples[i] = m_terrain->FindTopSolidPixel(sampleX, searchStartY);
         }
 
-        // Apply horizontal terrain collision (check multiple points around player)
-        for (int angle = 0; angle < 360; angle += 30) {
-            float rad = angle * 3.14159265f / 180.0f;
-            int checkX = (int)(pos.x + std::cos(rad) * radius);
-            int checkY = (int)(pos.y + std::sin(rad) * radius);
+        // Find the highest (lowest Y value) ground point that's not too far above player
+        for (int i = 0; i < sampleCount; i++) {
+            if (samples[i] >= 0) {
+                float currentBottom = pos.y + radius;
+                float distanceToSample = samples[i] - currentBottom;
 
-            if (m_terrain->IsPixelSolid(checkX, checkY)) {
-                // Push player away from solid pixel
-                Vector2 pushDir(std::cos(rad), std::sin(rad));
-                correction = correction - pushDir * 2.0f;
-            }
-        }
-
-        // Apply correction
-        if (correction.Length() > 0.1f) {
-            player->SetPosition(pos + correction);
-
-            // Stop downward velocity if on ground
-            if (onGround) {
-                Vector2 velocity = player->GetVelocity();
-                if (velocity.y > 0) {
-                    player->SetVelocity(Vector2(velocity.x, 0));
+                // Only accept ground that's below or very slightly above player
+                // This prevents snapping to ceiling in C-shaped terrain
+                if (distanceToSample >= -maxUpwardSearch) {
+                    if (groundY < 0 || samples[i] < groundY) {
+                        groundY = samples[i];
+                    }
                 }
             }
         }
+
+        // Store debug visualization data
+        if (m_debugDrawContours) {
+            DebugContourData debugData;
+            debugData.playerPos = pos;
+            debugData.playerRadius = radius;
+            debugData.groundY = groundY;
+
+            // Store sample points and ground points
+            for (int i = 0; i < sampleCount; i++) {
+                float t = (i / (float)(sampleCount - 1)) - 0.5f;
+                int sampleX = (int)(pos.x + t * radius * sampleWidthMultiplier);
+                int startY = (int)(pos.y + radius);
+                debugData.samplePoints.push_back(Vector2((float)sampleX, (float)startY));
+
+                if (samples[i] >= 0) {
+                    debugData.groundPoints.push_back(Vector2((float)sampleX, (float)samples[i]));
+                }
+            }
+
+            m_debugContourData.push_back(debugData);
+        }
+
+        // Ground following logic
+        if (groundY >= 0) {
+            float targetY = groundY - radius; // Target position (feet on ground)
+            float currentBottom = pos.y + radius;
+            float distanceToGround = groundY - currentBottom;
+
+            // Case 1: Player is embedded in terrain (negative distance)
+            if (distanceToGround < -2.0f) {
+                // Push player up to surface
+                onGround = true;
+                pos.y = targetY;
+                if (velocity.y > 0) {
+                    velocity.y = 0;
+                }
+            }
+            // Case 2: Player is on or very close to ground - snap for pixel-perfect contour
+            else if (distanceToGround >= -2.0f && distanceToGround <= 3.0f) {
+                onGround = true;
+                pos.y = targetY; // Direct snap - no smoothing for accuracy
+                if (velocity.y > 0) {
+                    velocity.y = 0;
+                }
+            }
+            // Case 3: Player is falling and close to ground - smooth landing
+            else if (velocity.y > 0 && distanceToGround > 3.0f && distanceToGround <= 15.0f) {
+                float smoothFactor = 0.5f;
+                pos.y = pos.y + distanceToGround * smoothFactor;
+
+                // Check if we're now close enough to snap
+                float newDistanceToGround = groundY - (pos.y + radius);
+                if (newDistanceToGround <= 3.0f) {
+                    onGround = true;
+                    pos.y = targetY;
+                    velocity.y = 0;
+                }
+            }
+            // Case 4: Player is far above ground (>15px) - let gravity work, but check collision
+            else if (distanceToGround > 15.0f && velocity.y > 0) {
+                // Just apply gravity naturally, will be caught by cases above as player gets closer
+            }
+            // Case 5: Player falling and would pass through ground this frame
+            else if (velocity.y > 0 && distanceToGround > 0) {
+                // Check if velocity would make player pass through
+                float nextBottom = currentBottom + velocity.y;
+                if (nextBottom >= groundY) {
+                    // Would pass through - land on ground instead
+                    onGround = true;
+                    pos.y = targetY;
+                    velocity.y = 0;
+                }
+            }
+        }
+
+        // Handle steep slope traversal (Gunny-style climbing)
+        if (onGround && std::abs(velocity.x) > 0.1f) {
+            // Check ahead in movement direction for terrain
+            float lookAheadDist = radius * 2.0f; // Increased look-ahead for better slope detection
+            int checkX = (int)(pos.x + (velocity.x > 0 ? lookAheadDist : -lookAheadDist));
+            int checkStartY = (int)(pos.y + radius);
+
+            // Check for ground ahead - increased search range upward to detect very steep slopes
+            int groundAhead = m_terrain->FindTopSolidPixel(checkX, checkStartY - (int)(radius * 6));
+
+            if (groundAhead >= 0) {
+                float heightDiff = groundAhead - groundY;
+
+                // Allow climbing extremely steep slopes (up to ~85 degrees, 7x radius height difference)
+                // Further increased to allow near-vertical terrain traversal
+                if (heightDiff < radius * 8.0f && heightDiff > -radius * 4) {
+                    // Smoothly adjust Y to climb slope - faster interpolation for responsive climbing
+                    float targetClimbY = groundAhead - radius;
+                    pos.y += (targetClimbY - pos.y) * 0.3f; // Increased from 0.3f to 0.4f for even faster climbing
+                }
+                // If slope is too steep, stop horizontal movement
+                // Increased threshold to 7x radius to match climbing capability
+                else if (heightDiff >= radius * 8.0f) {
+                    velocity.x *= 0.5f;
+                }
+            }
+        }
+
+        // Handle collision with terrain when embedded (pushed into walls)
+        bool embedded = false;
+        Vector2 pushOut(0, 0);
+        int embedCount = 0;
+
+        // Check if player center is inside terrain
+        for (int angle = 0; angle < 360; angle += 45) {
+            float rad = angle * 3.14159265f / 180.0f;
+            int checkX = (int)(pos.x + std::cos(rad) * radius * 0.8f);
+            int checkY = (int)(pos.y + std::sin(rad) * radius * 0.8f);
+
+            if (m_terrain->IsPixelSolid(checkX, checkY)) {
+                // Calculate push direction (away from solid)
+                Vector2 pushDir(-std::cos(rad), -std::sin(rad));
+                pushOut = pushOut + pushDir;
+                embedCount++;
+                embedded = true;
+            }
+        }
+
+        // Apply push out correction if embedded
+        if (embedded && embedCount > 0) {
+            pushOut = pushOut * (1.0f / embedCount); // Average direction
+            pos = pos + pushOut * 2.0f; // Push out
+
+            // Reduce velocity when hitting walls
+            if (std::abs(pushOut.x) > 0.1f) {
+                velocity.x *= 0.3f;
+            }
+        }
+
+        // Update player position and velocity
+        player->SetPosition(pos);
+        player->SetVelocity(velocity);
     }
 }
 
@@ -671,5 +850,14 @@ void Physics::ApplyHealing(const Vector2& center, float radius, int ownerId,
             float healAmount = player->GetMaxHealth() * 0.3f;
             player->Heal(healAmount);
         }
+    }
+}
+
+void Physics::CreateExplosion(const Vector2& position, float radius, bool isBigExplosion) {
+    if (!m_renderer) return; // Can't create explosion without renderer
+
+    auto explosion = std::make_unique<ExplosionAnimation>(position, radius, isBigExplosion);
+    if (explosion->Load(m_renderer)) {
+        m_explosions.push_back(std::move(explosion));
     }
 }

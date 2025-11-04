@@ -193,9 +193,14 @@ void Terrain::DestroyCircle(const Vector2& center, float radius) {
 int Terrain::FindTopSolidPixel(int x, int startY) const {
     if (!IsInBounds(x, 0)) return -1;
 
+    // Clamp startY to valid range
+    if (startY < 0) startY = 0;
+    if (startY >= m_height) return -1;
+
     // Search downward from startY to find the first solid pixel
     for (int y = startY; y < m_height; ++y) {
         if (IsPixelSolid(x, y)) {
+            // Return the first solid pixel found (the surface)
             return y;
         }
     }

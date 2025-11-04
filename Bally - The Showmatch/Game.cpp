@@ -40,6 +40,7 @@ bool Game::Initialize() {
 
     m_inputManager = std::make_unique<InputManager>();
     m_physics = std::make_unique<Physics>();
+    m_physics->SetRenderer(m_renderer.get()); // Set renderer for explosion animations
     m_ui = std::make_unique<UI>(m_renderer.get());
     m_menu = std::make_unique<Menu>(m_renderer.get());
     m_camera = std::make_unique<Camera>(1200.0f, 800.0f);
@@ -75,18 +76,53 @@ void Game::CreatePlayers() {
         Color(255, 255, 100, 255)  // Yellow
     };
 
+    // Character names for each player
+    std::string characterNames[] = {
+        "Meep",   // Player 1
+        "Yetty",  // Player 2
+        "Turt",   // Player 3
+        "Meep"    // Player 4 (reuse Meep for now)
+    };
+
     // Create players based on menu selection
     int numPlayers = m_numPlayers;
     float platformWidth = 800.0f;
     float platformHeight = 50.0f;
-    float startY = 600.0f;
 
     for (int i = 0; i < numPlayers; ++i) {
         float spacing = platformWidth / (numPlayers + 1);
         float x = 200.0f + spacing * (i + 1);
+        
+        // Find terrain height at spawn position
+        float startY = 600.0f; // Default fallback
+        if (m_currentMap && m_currentMap->GetTerrain()) {
+            int terrainY = m_currentMap->GetTerrain()->FindTopSolidPixel((int)x, 0);
+            if (terrainY >= 0) {
+                // Position player so their feet (bottom) are on the ground
+                float playerRadius = 20.0f; // Default radius
+                startY = (float)terrainY - playerRadius;
+            }
+        }
+        
         Vector2 position(x, startY);
 
-        auto player = std::make_unique<Player>(i, position, playerColors[i]);
+        auto player = std::make_unique<Player>(i, position, playerColors[i], characterNames[i]);
+
+        // Load character animations
+        if (player->GetAnimation()) {
+            player->GetAnimation()->LoadCharacter(m_renderer.get());
+        }
+
+        // Snap player to terrain using actual radius
+        if (m_currentMap && m_currentMap->GetTerrain()) {
+            Vector2 playerPos = player->GetPosition();
+            int terrainY = m_currentMap->GetTerrain()->FindTopSolidPixel((int)playerPos.x, 0);
+            if (terrainY >= 0) {
+                playerPos.y = (float)terrainY - player->GetRadius();
+                player->SetPosition(playerPos);
+            }
+        }
+
         m_players.push_back(std::move(player));
     }
 
@@ -224,6 +260,8 @@ void Game::Update(float deltaTime) {
             m_cameraDelayTimer -= deltaTime;
             if (m_cameraDelayTimer <= 0.0f) {
                 m_cameraDelayActive = false;
+                // Force turn to end immediately after camera delay
+                m_turnTimer = 0.0f;
             }
         }
 
@@ -234,9 +272,6 @@ void Game::Update(float deltaTime) {
         // If there are active projectiles, follow them in order
         const auto& projectiles = m_physics->GetProjectiles();
         if (!projectiles.empty()) {
-            // Reset camera delay - projectiles are still active
-            m_cameraDelayActive = false;
-
             // For split projectiles (3 projectiles), follow in order: middle (0), bottom (2), upper (1)
             // For other projectiles, just follow the first one
             Projectile* targetProjectile = nullptr;
@@ -268,15 +303,9 @@ void Game::Update(float deltaTime) {
                 hasCameraTarget = true;
             }
         }
-        else if (!m_cameraDelayActive) {
-            // No projectiles and no delay - start delay timer
-            if (m_waitingForProjectiles) {
-                m_cameraDelayActive = true;
-                m_cameraDelayTimer = CAMERA_DELAY_AFTER_IMPACT;
-            }
-        }
 
-        // Only move camera back to player after delay expires
+        // If no projectiles and camera delay is active, keep camera at last projectile position
+        // After delay expires, move camera back to current player
         if (!hasCameraTarget && !m_cameraDelayActive && m_currentPlayerIndex < m_players.size()) {
             // No projectiles and delay expired - follow the current player
             cameraTarget = m_players[m_currentPlayerIndex]->GetPosition();
@@ -436,11 +465,17 @@ void Game::ProcessTurn() {
     // If waiting for projectiles, don't count down timer until all projectiles land
     if (m_waitingForProjectiles) {
         if (!m_physics->HasActiveProjectiles()) {
-            // All projectiles have landed, can now end turn
+            // All projectiles have landed, start camera delay
             m_waitingForProjectiles = false;
-            m_turnTimer = 0.0f; // Force turn end
+            m_cameraDelayActive = true;
+            m_cameraDelayTimer = CAMERA_DELAY_AFTER_IMPACT;
         }
         return; // Don't decrement timer while waiting
+    }
+
+    // If camera delay is active after projectiles landed, don't count down timer
+    if (m_cameraDelayActive) {
+        return; // Delay will force turn end when it expires
     }
 
     m_turnTimer -= 1.0f / 60.0f;
@@ -524,6 +559,16 @@ void Game::ResetGame() {
     // Reset all players
     for (auto& player : m_players) {
         player->ResetForNewGame();
+        
+        // Snap player to terrain after reset
+        if (m_currentMap && m_currentMap->GetTerrain()) {
+            Vector2 playerPos = player->GetPosition();
+            int terrainY = m_currentMap->GetTerrain()->FindTopSolidPixel((int)playerPos.x, 0);
+            if (terrainY >= 0) {
+                playerPos.y = (float)terrainY - player->GetRadius();
+                player->SetPosition(playerPos);
+            }
+        }
     }
 
     // Clear projectiles and skill orbs
@@ -602,13 +647,25 @@ void Game::Render() {
         // Draw projectiles
         m_physics->Draw(m_renderer.get());
 
-        // Draw players
+        // Draw players (including dead ones to show death animation)
         for (const auto& player : m_players) {
-            if (player->IsAlive()) {
-                m_renderer->SetDrawColor(player->GetColor());
-                m_renderer->DrawCircle(player->GetPosition(), player->GetRadius(), player->GetColor());
+            // Skip players that should be removed (death animation finished)
+            if (player->ShouldBeRemoved()) continue;
 
-                // Draw health bar
+            // Draw character animation if available, otherwise draw circle
+            if (player->GetAnimation()) {
+                player->GetAnimation()->Draw(m_renderer.get(), player->GetPosition(),
+                                             player->GetRadius(), player->IsFacingRight());
+            } else {
+                // Fallback to circle for players without animation
+                if (player->IsAlive()) {
+                    m_renderer->SetDrawColor(player->GetColor());
+                    m_renderer->DrawCircle(player->GetPosition(), player->GetRadius(), player->GetColor());
+                }
+            }
+
+            // Draw health bar only for alive players
+            if (player->IsAlive()) {
                 Vector2 healthBarPos = player->GetPosition() + Vector2(0, -40);
                 m_renderer->DrawHealthBar(healthBarPos, player->GetHealth(), player->GetMaxHealth(), 40, 8);
             }

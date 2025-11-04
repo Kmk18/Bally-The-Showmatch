@@ -9,18 +9,78 @@ constexpr const T& clamp(const T& v, const T& lo, const T& hi) {
     return (v < lo) ? lo : (hi < v) ? hi : v;
 }
 
-Player::Player(int id, const Vector2& position, const Color& color)
+Player::Player(int id, const Vector2& position, const Color& color, const std::string& characterName)
     : m_id(id), m_position(position), m_velocity(Vector2::Zero()), m_angle(-45.0f), m_power(0.0f),
     m_state(PlayerState::IDLE), m_health(DEFAULT_HEALTH), m_maxHealth(DEFAULT_HEALTH),
     m_mass(DEFAULT_MASS), m_radius(DEFAULT_RADIUS), m_acceleration(Vector2::Zero()),
-    m_color(color), m_facingRight(true), m_leftPressed(false), m_rightPressed(false),
+    m_color(color), m_facingRight(true), m_characterName(characterName),
+    m_hurtAnimationTimer(0.0f), m_lastHealth(DEFAULT_HEALTH),
+    m_leftPressed(false), m_rightPressed(false),
     m_upPressed(false), m_downPressed(false), m_spacePressed(false), m_powerIncreasing(true) {
+
+    // Create character animation if character name is provided
+    if (!m_characterName.empty()) {
+        m_animation = std::make_unique<CharacterAnimation>(m_characterName);
+    }
 }
 
 void Player::Update(float deltaTime) {
-    if (m_state == PlayerState::DEAD) return;
+    // Check if player just took damage
+    if (m_health < m_lastHealth && m_health > 0) {
+        m_hurtAnimationTimer = 0.4f; // Play hurt animation for 0.4 seconds (4 frames at 0.1s each)
+    }
+    m_lastHealth = m_health;
+
+    // Handle death
+    if (m_state == PlayerState::DEAD) {
+        if (m_animation) {
+            m_animation->SetAnimation(AnimationType::DIE);
+            m_animation->Update(deltaTime);
+        }
+        return;
+    }
 
     UpdatePhysics(deltaTime);
+
+    // Update hurt animation timer
+    if (m_hurtAnimationTimer > 0.0f) {
+        m_hurtAnimationTimer -= deltaTime;
+    }
+
+    // Update character animation
+    if (m_animation) {
+        // Priority 1: Hurt animation (if player just took damage)
+        if (m_hurtAnimationTimer > 0.0f) {
+            m_animation->SetAnimation(AnimationType::HURT);
+        }
+        // Priority 2: Throwing animation (when space is released - play frames 2-3)
+        else if (m_state == PlayerState::THROWING) {
+            m_animation->SetAnimation(AnimationType::THROW);
+            // Resume animation to play frames 2 and 3
+            m_animation->ResumeAnimation();
+        }
+        // Priority 3: Charging throw animation (while holding space - play frames 0-1, pause at 1)
+        else if (m_state == PlayerState::AIMING && m_spacePressed) {
+            m_animation->SetAnimation(AnimationType::THROW);
+
+            // Allow animation to advance to frame 1, then pause
+            if (m_animation->GetCurrentFrame() >= 1) {
+                m_animation->PauseAtFrame(1);
+            } else {
+                m_animation->ResumeAnimation(); // Let it advance from 0 to 1
+            }
+        }
+        // Priority 4: Walking animation (ONLY when actively pressing movement keys)
+        else if (m_state == PlayerState::AIMING && (m_leftPressed || m_rightPressed)) {
+            m_animation->SetAnimation(AnimationType::WALK);
+        }
+        // Priority 5: Idle animation (default - no user input)
+        else {
+            m_animation->SetAnimation(AnimationType::IDLE);
+        }
+
+        m_animation->Update(deltaTime);
+    }
 
     // Update input states
     if (m_state == PlayerState::AIMING) {
@@ -78,14 +138,17 @@ void Player::HandleInput(int input, bool pressed) {
 
     // Handle continuous input
     if (m_state == PlayerState::AIMING) {
-        if (m_leftPressed) {
-            m_position.x -= MOVE_SPEED * (1.0f / 60.0f); // Assuming 60 FPS
-        }
-        if (m_rightPressed) {
-            m_position.x += MOVE_SPEED * (1.0f / 60.0f);
+        // Prevent movement while charging (holding space)
+        if (!m_spacePressed) {
+            if (m_leftPressed) {
+                m_position.x -= MOVE_SPEED * (1.0f / 60.0f); // Assuming 60 FPS
+            }
+            if (m_rightPressed) {
+                m_position.x += MOVE_SPEED * (1.0f / 60.0f);
+            }
         }
 
-        // Angle controls: up aims upward, down aims downward
+        // Angle controls: up aims upward, down aims downward (can still aim while charging)
         if (m_upPressed) {
             m_angle -= ANGLE_SPEED * (1.0f / 60.0f);
             m_angle = std::max(m_angle, MIN_ANGLE);
@@ -145,6 +208,17 @@ void Player::StartTurn() {
 void Player::EndTurn() {
     m_state = PlayerState::IDLE;
     m_power = 0.0f;
+}
+
+bool Player::ShouldBeRemoved() const {
+    // Remove player if dead and death animation has finished
+    if (!IsAlive()) {
+        if (m_animation) {
+            return m_animation->IsAnimationFinished();
+        }
+        return true; // If no animation, remove immediately
+    }
+    return false;
 }
 
 void Player::ResetForNewGame() {

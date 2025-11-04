@@ -76,7 +76,7 @@ private:
     // Camera delay after projectile lands
     float m_cameraDelayTimer;
     bool m_cameraDelayActive;
-    static constexpr float CAMERA_DELAY_AFTER_IMPACT = 0.8f; // 0.8 seconds delay
+    static constexpr float CAMERA_DELAY_AFTER_IMPACT = 0.5f; // 0.5 seconds delay
 
     // Game constants
     static constexpr int MAX_PLAYERS = 4;

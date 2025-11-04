@@ -2,7 +2,9 @@
 
 #include "Vector2.h"
 #include "Renderer.h"
+#include "CharacterAnimation.h"
 #include <SDL3/SDL.h>
+#include <memory>
 
 enum class PlayerState {
     IDLE,
@@ -13,7 +15,7 @@ enum class PlayerState {
 
 class Player {
 public:
-    Player(int id, const Vector2& position, const Color& color);
+    Player(int id, const Vector2& position, const Color& color, const std::string& characterName = "");
 
     void Update(float deltaTime);
     void HandleInput(int input, bool pressed);
@@ -33,6 +35,8 @@ public:
     float GetRadius() const { return m_radius; }
     bool IsAlive() const { return m_health > 0; }
     bool IsFacingRight() const { return m_facingRight; }
+    CharacterAnimation* GetAnimation() { return m_animation.get(); }
+    bool ShouldBeRemoved() const; // Returns true if dead and death animation finished
 
     // Setters
     void SetPosition(const Vector2& position) { m_position = position; }
@@ -85,6 +89,10 @@ private:
     // Visual
     Color m_color;
     bool m_facingRight;
+    std::unique_ptr<CharacterAnimation> m_animation;
+    std::string m_characterName;
+    float m_hurtAnimationTimer;
+    float m_lastHealth;
 
     // Skills
     std::vector<int> m_availableSkills;
@@ -105,7 +113,7 @@ private:
     // Constants
     static constexpr float MOVE_SPEED = 5.0f;
     static constexpr float ANGLE_SPEED = 5.0f;
-    static constexpr float POWER_SPEED = 50.0f;
+    static constexpr float POWER_SPEED = 35.0f;  // Reduced from 50.0f for slower power bar charging
     static constexpr float MAX_POWER = 100.0f;
     static constexpr float MAX_ANGLE = 90.0f;
     static constexpr float MIN_ANGLE = -90.0f;
