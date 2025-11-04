@@ -208,6 +208,162 @@ int Terrain::FindTopSolidPixel(int x, int startY) const {
     return -1; // No solid pixel found
 }
 
+int Terrain::FindGroundSurface(int x) const {
+    if (!IsInBounds(x, 0)) return -1;
+
+    // Search from bottom up to find the top surface of terrain platforms
+    // This avoids finding ceilings when there's terrain at the top of the map
+    bool foundSolid = false;
+    int lastSolidY = -1;
+    
+    // Search from bottom to top
+    for (int y = m_height - 1; y >= 0; --y) {
+        if (IsPixelSolid(x, y)) {
+            foundSolid = true;
+            lastSolidY = y;
+            
+            // Check if this is the top surface (pixel above is not solid)
+            if (y == 0 || !IsPixelSolid(x, y - 1)) {
+                // This is the top surface - but check if it's a ceiling (near top of map)
+                // If terrain is only in top 15% of map, it's likely a ceiling, skip it
+                if (y < m_height * 0.15f) {
+                    // This looks like a ceiling, continue searching for ground below
+                    continue;
+                }
+                // This is a valid ground surface
+                return y;
+            }
+        }
+    }
+    
+    // If we found solid terrain but it was all at the top (ceiling), return -1
+    if (foundSolid && lastSolidY < m_height * 0.15f) {
+        return -1; // Only ceiling found, no valid ground
+    }
+    
+    // Return the last solid pixel found (should be top surface)
+    return lastSolidY;
+}
+
+int Terrain::FindGroundSurfaceArea(int x, int searchRadius) const {
+    if (!IsInBounds(x, 0)) return -1;
+    
+    // Search in a small area around x to find the best ground position
+    // This helps if there's a small gap or hole at the exact spawn position
+    int bestGroundY = -1;
+    int bestDistance = searchRadius + 1;
+    
+    for (int offsetX = -searchRadius; offsetX <= searchRadius; ++offsetX) {
+        int checkX = x + offsetX;
+        if (!IsInBounds(checkX, 0)) continue;
+        
+        int groundY = FindGroundSurface(checkX);
+        if (groundY >= 0) {
+            // Found valid ground - prefer positions closer to the original x
+            int distance = std::abs(offsetX);
+            if (bestGroundY < 0 || distance < bestDistance) {
+                bestGroundY = groundY;
+                bestDistance = distance;
+            }
+        }
+    }
+    
+    return bestGroundY;
+}
+
+bool Terrain::HasSolidGroundBelow(int x, int y, int minDepth) const {
+    if (!IsInBounds(x, y)) return false;
+    
+    // Check if there's solid terrain below this position
+    // Start checking from the position and go down
+    int solidCount = 0;
+    for (int checkY = y; checkY < m_height && checkY < y + minDepth; ++checkY) {
+        if (IsPixelSolid(x, checkY)) {
+            solidCount++;
+        }
+    }
+    
+    // Consider it solid ground if we have at least some solid pixels below
+    return solidCount >= (minDepth / 2);
+}
+
+int Terrain::FindSolidGroundSurface(int x, int searchRadius) const {
+    if (!IsInBounds(x, 0)) return -1;
+    
+    // Search in area around x to find solid ground (not floating)
+    int bestGroundY = -1;
+    int bestDistance = searchRadius + 1;
+    
+    for (int offsetX = -searchRadius; offsetX <= searchRadius; ++offsetX) {
+        int checkX = x + offsetX;
+        if (!IsInBounds(checkX, 0)) continue;
+        
+        // Find ground surface at this X
+        int groundY = FindGroundSurface(checkX);
+        if (groundY >= 0) {
+            // Check if this ground has solid terrain below it (not floating)
+            if (HasSolidGroundBelow(checkX, groundY, 30)) {
+                // Found solid ground - prefer positions closer to the original x
+                int distance = std::abs(offsetX);
+                if (bestGroundY < 0 || distance < bestDistance) {
+                    bestGroundY = groundY;
+                    bestDistance = distance;
+                }
+            }
+        }
+    }
+    
+    // If no solid ground found, fall back to any ground (even floating)
+    if (bestGroundY < 0) {
+        return FindGroundSurfaceArea(x, searchRadius);
+    }
+    
+    return bestGroundY;
+}
+
+bool Terrain::FindValidSpawnPosition(int targetX, int searchRange, float playerRadius, int& outSpawnX, int& outSpawnY) const {
+    // Search horizontally around targetX to find valid spawn position
+    // Check positions closest to targetX first (offset 0, then 1, then 2, etc.)
+    for (int offset = 0; offset <= searchRange; ++offset) {
+        // Check both sides of targetX (check 0 offset first, then alternating sides)
+        if (offset == 0) {
+            // First check exact position
+            int checkX = targetX;
+            if (IsInBounds(checkX, 0)) {
+                int groundY = FindSolidGroundSurface(checkX, 20);
+                if (groundY >= 0) {
+                    Vector2 testPos((float)checkX, (float)groundY - playerRadius - 3.0f);
+                    if (!IsCircleSolid(testPos, playerRadius)) {
+                        outSpawnX = checkX;
+                        outSpawnY = groundY;
+                        return true;
+                    }
+                }
+            }
+        } else {
+            // Check both sides at this offset
+            for (int direction = -1; direction <= 1; direction += 2) {
+                int checkX = targetX + (offset * direction);
+                if (!IsInBounds(checkX, 0)) continue;
+                
+                // Find solid ground at this X
+                int groundY = FindSolidGroundSurface(checkX, 20);
+                if (groundY >= 0) {
+                    // Verify player won't be inside terrain at this position
+                    Vector2 testPos((float)checkX, (float)groundY - playerRadius - 3.0f);
+                    if (!IsCircleSolid(testPos, playerRadius)) {
+                        outSpawnX = checkX;
+                        outSpawnY = groundY;
+                        return true;
+                    }
+                }
+            }
+        }
+    }
+    
+    return false;
+}
+
 void Terrain::UpdateTexture(Renderer* renderer) {
     if (!m_surface) return;
 

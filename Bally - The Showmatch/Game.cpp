@@ -99,19 +99,28 @@ void Game::CreatePlayers() {
     for (int i = 0; i < numPlayers; ++i) {
         // Distribute players evenly across the spawn area
         float spacing = (numPlayers > 1) ? spawnAreaWidth / (numPlayers - 1) : 0.0f;
-        float x = startX + spacing * i;
+        float targetX = startX + spacing * i;
         
-        // Clamp x to map bounds
-        x = std::max(padding, std::min(x, mapWidth - padding));
+        // Clamp targetX to map bounds
+        targetX = std::max(padding, std::min(targetX, mapWidth - padding));
         
-        // Find terrain height at spawn position
+        // Find valid spawn position - search for valid ground near targetX
+        float x = targetX;
         float startY = mapHeight * 0.75f; // Default fallback (75% down the map)
+        float playerRadius = 20.0f; // Default radius, will be updated with actual radius
+        
         if (m_currentMap && m_currentMap->GetTerrain()) {
-            int terrainY = m_currentMap->GetTerrain()->FindTopSolidPixel((int)x, 0);
-            if (terrainY >= 0) {
-                // Position player so their feet (bottom) are on the ground
-                float playerRadius = 20.0f; // Default radius
-                startY = (float)terrainY - playerRadius;
+            int spawnX = 0, spawnY = 0;
+            // Search up to 100 pixels left/right to find valid spawn position
+            if (m_currentMap->GetTerrain()->FindValidSpawnPosition((int)targetX, 100, playerRadius, spawnX, spawnY)) {
+                x = (float)spawnX;
+                startY = (float)spawnY - playerRadius - 3.0f; // 3px offset to ensure above terrain
+            } else {
+                // Fallback: try to find any valid ground
+                int terrainY = m_currentMap->GetTerrain()->FindSolidGroundSurface((int)targetX, 50);
+                if (terrainY >= 0) {
+                    startY = (float)terrainY - playerRadius - 3.0f;
+                }
             }
         }
         
@@ -124,14 +133,33 @@ void Game::CreatePlayers() {
             player->GetAnimation()->LoadCharacter(m_renderer.get());
         }
 
-        // Snap player to terrain using actual radius
+        // Final verification: ensure player is not inside terrain
         if (m_currentMap && m_currentMap->GetTerrain()) {
             Vector2 playerPos = player->GetPosition();
-            int terrainY = m_currentMap->GetTerrain()->FindTopSolidPixel((int)playerPos.x, 0);
-            if (terrainY >= 0) {
-                playerPos.y = (float)terrainY - player->GetRadius();
-                player->SetPosition(playerPos);
+            float actualRadius = player->GetRadius();
+            
+            // Use IsCircleSolid to check if player is inside terrain (more accurate)
+            if (m_currentMap->GetTerrain()->IsCircleSolid(playerPos, actualRadius)) {
+                // Player is inside terrain - find valid position above
+                int terrainY = m_currentMap->GetTerrain()->FindSolidGroundSurface((int)playerPos.x, 50);
+                if (terrainY >= 0) {
+                    playerPos.y = (float)terrainY - actualRadius - 3.0f;
+                    
+                    // Verify this position is valid
+                    if (m_currentMap->GetTerrain()->IsCircleSolid(playerPos, actualRadius)) {
+                        // Still inside, push up until clear
+                        for (int adjustY = terrainY - (int)actualRadius - 3; adjustY >= 0; adjustY -= 1) {
+                            Vector2 testPos(playerPos.x, (float)adjustY);
+                            if (!m_currentMap->GetTerrain()->IsCircleSolid(testPos, actualRadius)) {
+                                playerPos.y = (float)adjustY;
+                                break;
+                            }
+                        }
+                    }
+                }
             }
+            
+            player->SetPosition(playerPos);
         }
 
         m_players.push_back(std::move(player));
@@ -343,7 +371,7 @@ void Game::Update(float deltaTime) {
                 if (!currentPlayer->IsFacingRight()) {
                     velocity.x = -velocity.x;
                 }
-                velocity = velocity * (powerRatio * 1200.0f);
+                velocity = velocity * (powerRatio * 1800.0f); // Increased from 1200 to 1800 for faster, smoother projectiles
 
                 Vector2 spawnPos = currentPlayer->GetPosition();
 
@@ -387,7 +415,13 @@ void Game::Update(float deltaTime) {
 }
 
 void Game::ProcessCurrentPlayerInput() {
+    // Safety check
+    if (m_currentPlayerIndex >= m_players.size()) return;
+    
     Player* currentPlayer = m_players[m_currentPlayerIndex].get();
+    
+    // Only process input for alive players
+    if (!currentPlayer->IsAlive()) return;
 
     // Check if inventory slots were pressed (toggle skill selection)
     if (currentPlayer->GetState() == PlayerState::AIMING) {
@@ -430,6 +464,12 @@ void Game::ProcessTurn() {
         m_gameStarted = true;
         m_turnTimer = TURN_DURATION;
         m_turnCounter = 0;
+        // Always start with player 0 (first player)
+        m_currentPlayerIndex = 0;
+        // Find first alive player
+        while (m_currentPlayerIndex < m_players.size() && !m_players[m_currentPlayerIndex]->IsAlive()) {
+            m_currentPlayerIndex++;
+        }
         if (m_currentPlayerIndex < m_players.size()) {
             m_players[m_currentPlayerIndex]->StartTurn();
         }
@@ -521,10 +561,21 @@ void Game::ProcessTurn() {
 }
 
 void Game::SpawnSkillOrbs() {
+    // Get actual map dimensions for spawning
+    float mapWidth = m_currentMap ? static_cast<float>(m_currentMap->GetWidth()) : 1200.0f;
+    float mapHeight = m_currentMap ? static_cast<float>(m_currentMap->GetHeight()) : 800.0f;
+    
+    // Spawn within map bounds with padding from edges
+    float padding = 100.0f;
+    float minX = padding;
+    float maxX = mapWidth - padding;
+    float minY = 200.0f; // Keep some distance from top
+    float maxY = mapHeight - 200.0f; // Keep some distance from bottom
+    
     std::random_device rd;
     std::mt19937 gen(rd());
-    std::uniform_real_distribution<float> xDist(100.0f, 1100.0f);
-    std::uniform_real_distribution<float> yDist(200.0f, 500.0f);
+    std::uniform_real_distribution<float> xDist(minX, maxX);
+    std::uniform_real_distribution<float> yDist(minY, maxY);
     std::uniform_int_distribution<int> skillDist(0, static_cast<int>(SkillType::COUNT) - 1);
     std::uniform_int_distribution<int> orbCountDist(2, 5);
 
@@ -565,6 +616,8 @@ void Game::ResetGame() {
     m_gameEnded = false;
     m_winnerId = -1;
     m_waitingForProjectiles = false;
+    m_cameraDelayActive = false;
+    m_cameraDelayTimer = 0.0f;
 
     // Get actual map dimensions for respawning
     float mapWidth = m_currentMap ? static_cast<float>(m_currentMap->GetWidth()) : 1200.0f;
@@ -579,19 +632,30 @@ void Game::ResetGame() {
     for (size_t i = 0; i < m_players.size(); ++i) {
         m_players[i]->ResetForNewGame();
         
-        // Calculate new spawn position based on map size
+        // Calculate target spawn position based on map size
         float spacing = (m_players.size() > 1) ? spawnAreaWidth / (m_players.size() - 1) : 0.0f;
-        float x = startX + spacing * i;
+        float targetX = startX + spacing * i;
         
-        // Clamp x to map bounds
-        x = std::max(padding, std::min(x, mapWidth - padding));
+        // Clamp targetX to map bounds
+        targetX = std::max(padding, std::min(targetX, mapWidth - padding));
         
-        // Find terrain height at spawn position
+        // Find valid spawn position - search for valid ground near targetX
+        float x = targetX;
         float startY = mapHeight * 0.75f; // Default fallback
+        float playerRadius = m_players[i]->GetRadius();
+        
         if (m_currentMap && m_currentMap->GetTerrain()) {
-            int terrainY = m_currentMap->GetTerrain()->FindTopSolidPixel((int)x, 0);
-            if (terrainY >= 0) {
-                startY = (float)terrainY - m_players[i]->GetRadius();
+            int spawnX = 0, spawnY = 0;
+            // Search up to 100 pixels left/right to find valid spawn position
+            if (m_currentMap->GetTerrain()->FindValidSpawnPosition((int)targetX, 100, playerRadius, spawnX, spawnY)) {
+                x = (float)spawnX;
+                startY = (float)spawnY - playerRadius - 3.0f; // 3px offset to ensure above terrain
+            } else {
+                // Fallback: try to find any valid ground
+                int terrainY = m_currentMap->GetTerrain()->FindSolidGroundSurface((int)targetX, 50);
+                if (terrainY >= 0) {
+                    startY = (float)terrainY - playerRadius - 3.0f;
+                }
             }
         }
         
@@ -599,13 +663,30 @@ void Game::ResetGame() {
         Vector2 playerPos(x, startY);
         m_players[i]->SetPosition(playerPos);
         
-        // Ensure player is snapped to terrain
+        // Final verification: ensure player is not inside terrain
         if (m_currentMap && m_currentMap->GetTerrain()) {
-            int terrainY = m_currentMap->GetTerrain()->FindTopSolidPixel((int)playerPos.x, 0);
-            if (terrainY >= 0) {
-                playerPos.y = (float)terrainY - m_players[i]->GetRadius();
-                m_players[i]->SetPosition(playerPos);
+            // Use IsCircleSolid to check if player is inside terrain (more accurate)
+            if (m_currentMap->GetTerrain()->IsCircleSolid(playerPos, playerRadius)) {
+                // Player is inside terrain - find valid position above
+                int terrainY = m_currentMap->GetTerrain()->FindSolidGroundSurface((int)playerPos.x, 50);
+                if (terrainY >= 0) {
+                    playerPos.y = (float)terrainY - playerRadius - 3.0f;
+                    
+                    // Verify this position is valid
+                    if (m_currentMap->GetTerrain()->IsCircleSolid(playerPos, playerRadius)) {
+                        // Still inside, push up until clear
+                        for (int adjustY = terrainY - (int)playerRadius - 3; adjustY >= 0; adjustY -= 1) {
+                            Vector2 testPos(playerPos.x, (float)adjustY);
+                            if (!m_currentMap->GetTerrain()->IsCircleSolid(testPos, playerRadius)) {
+                                playerPos.y = (float)adjustY;
+                                break;
+                            }
+                        }
+                    }
+                }
             }
+            
+            m_players[i]->SetPosition(playerPos);
         }
     }
 

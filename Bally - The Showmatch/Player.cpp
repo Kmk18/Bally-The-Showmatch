@@ -194,8 +194,7 @@ void Player::UpdatePhysics(float deltaTime) {
     // Apply friction
     m_velocity = m_velocity * 0.99f;
 
-    // Keep player within horizontal screen bounds
-    m_position.x = clamp(m_position.x, m_radius, 1200.0f - m_radius);
+    // Keep player within horizontal bounds (removed - handled by map/terrain bounds)
 }
 
 void Player::StartTurn() {

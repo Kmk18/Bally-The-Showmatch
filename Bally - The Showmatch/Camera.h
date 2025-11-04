@@ -58,7 +58,7 @@ private:
 
     // Manual control
     bool m_manualControl;
-    static constexpr float MANUAL_MOVE_SPEED = 800.0f; // Pixels per second for WASD
+    static constexpr float MANUAL_MOVE_SPEED = 1200.0f; // Pixels per second for WASD (increased for smoother movement)
 
     // Clamp camera position to map bounds
     void ClampToMapBounds();

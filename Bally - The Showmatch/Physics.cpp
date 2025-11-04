@@ -85,10 +85,6 @@ void Projectile::Update(float deltaTime) {
     // Reset acceleration
     m_acceleration = Vector2::Zero();
 
-    // Deactivate if it goes off screen
-    if (m_position.x < -100 || m_position.x > 1300 || m_position.y > 900) {
-        m_active = false;
-    }
 }
 
 void Projectile::Draw(class Renderer* renderer) const {
@@ -218,7 +214,7 @@ bool Projectile::DamagesTerrain() const {
 }
 
 Physics::Physics() : m_terrain(nullptr), m_renderer(nullptr), m_platformWidth(PLATFORM_WIDTH), m_platformHeight(PLATFORM_HEIGHT),
-m_platformPosition(200.0f, 650.0f), m_debugDrawContours(true) {
+m_platformPosition(200.0f, 650.0f), m_debugDrawContours(false) {
 }
 
 Physics::~Physics() {
@@ -227,9 +223,20 @@ Physics::~Physics() {
 }
 
 void Physics::Update(float deltaTime) {
+    // Get map dimensions for bounds checking
+    float mapWidth = m_terrain ? static_cast<float>(m_terrain->GetWidth()) : 1200.0f;
+    float mapHeight = m_terrain ? static_cast<float>(m_terrain->GetHeight()) : 800.0f;
+    
     // Update projectiles
     for (auto& projectile : m_projectiles) {
         projectile->Update(deltaTime);
+        
+        // Deactivate projectiles that go outside map bounds (with some buffer)
+        Vector2 pos = projectile->GetPosition();
+        float buffer = 100.0f; // Allow some buffer outside map before deactivating
+        if (pos.x < -buffer || pos.x > mapWidth + buffer || pos.y > mapHeight + buffer) {
+            projectile->SetActive(false);
+        }
     }
 
     // Remove inactive projectiles
@@ -409,8 +416,9 @@ void Physics::CheckProjectileCollisions(std::vector<std::unique_ptr<Player>>& pl
             else if (projectile->HasTeleportBall()) {
                 // Teleport the owner to this location (unless it's void)
                 Vector2 teleportPos = projectile->GetPosition();
-                // Make sure teleport position is above terrain
-                if (teleportPos.y < 850.0f) {
+                // Make sure teleport position is within map bounds
+                float mapHeight = m_terrain ? static_cast<float>(m_terrain->GetHeight()) : 800.0f;
+                if (teleportPos.y >= 0 && teleportPos.y < mapHeight) {
                     for (auto& player : players) {
                         if (player->GetId() == projectile->GetOwnerId()) {
                             player->SetPosition(teleportPos);
@@ -501,8 +509,11 @@ void Physics::CheckPlayerPlatformCollisions(std::vector<std::unique_ptr<Player>>
 
         Vector2 pos = player->GetPosition();
 
-        // Check if player fell into the void (below screen)
-        if (pos.y > 850.0f) {  // Screen height is 800, give some buffer
+        // Check if player fell into the void (below map)
+        // Use terrain height if available, otherwise fallback to default
+        float mapHeight = m_terrain ? static_cast<float>(m_terrain->GetHeight()) : 800.0f;
+        float deathThreshold = mapHeight + 50.0f;  // Map height + buffer
+        if (pos.y > deathThreshold) {
             player->TakeDamage(player->GetMaxHealth());  // Kill the player
             continue;
         }
@@ -608,13 +619,8 @@ void Physics::ApplyExplosion(const Vector2& center, float radius, float force,
         float distanceLength = distance.Length();
 
         if (distanceLength < radius && distanceLength > 0) {
-            // Calculate explosion force based on distance
-            float forceMagnitude = force * (1.0f - (distanceLength / radius));
-            Vector2 explosionForce = distance * (forceMagnitude / distanceLength);
-
-            player->ApplyForce(explosionForce);
-
-            // Also apply damage based on distance
+            // Hit displacement removed - players are no longer pushed by explosions
+            // Only apply damage based on distance
             float damage = 30.0f * (1.0f - (distanceLength / radius));
             player->TakeDamage(damage);
         }
@@ -636,8 +642,11 @@ void Physics::CheckPlayerTerrainCollisions(std::vector<std::unique_ptr<Player>>&
         Vector2 velocity = player->GetVelocity();
         float radius = player->GetRadius();
 
-        // Check if player fell into the void (below screen)
-        if (pos.y > 850.0f) {
+        // Check if player fell into the void (below map)
+        // Use terrain height if available, otherwise fallback to default
+        float mapHeight = static_cast<float>(m_terrain->GetHeight());
+        float deathThreshold = mapHeight + 50.0f;  // Map height + buffer
+        if (pos.y > deathThreshold) {
             player->TakeDamage(player->GetMaxHealth());  // Kill the player
             continue;
         }

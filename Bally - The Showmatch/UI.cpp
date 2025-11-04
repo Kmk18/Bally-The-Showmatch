@@ -187,8 +187,8 @@ void UI::DrawAimingUI(const Player& player, const Vector2& mousePosition) {
     Vector2 powerIndicatorPos = playerPos + Vector2(0, -60);
     DrawPowerIndicator(powerIndicatorPos, player.GetPower(), 100.0f);
 
-    // Draw trajectory preview using the same velocity
-    m_renderer->DrawProjectileTrajectory(playerPos, velocity * (powerRatio * 1200.0f), 980.0f, 60);
+    // Draw trajectory preview using the same velocity (matching Game.cpp projectile speed)
+    m_renderer->DrawProjectileTrajectory(playerPos, velocity * (powerRatio * 1800.0f), 980.0f, 60);
 
     // Draw controls help
     Vector2 helpPos(10, 400);

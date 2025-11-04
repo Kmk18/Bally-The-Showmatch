@@ -7,7 +7,7 @@ Camera::Camera(float viewportWidth, float viewportHeight)
     , m_target(viewportWidth / 2.0f, viewportHeight / 2.0f)
     , m_viewportWidth(viewportWidth)
     , m_viewportHeight(viewportHeight)
-    , m_followSpeed(1000.0f)  // 1000 pixels per second
+    , m_followSpeed(2000.0f)  // 2000 pixels per second (increased for smoother camera movement)
     , m_mapWidth(viewportWidth)
     , m_mapHeight(viewportHeight)
     , m_manualControl(false)
