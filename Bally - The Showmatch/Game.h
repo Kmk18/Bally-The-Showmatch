@@ -82,4 +82,3 @@ private:
     static constexpr int MAX_PLAYERS = 4;
     static constexpr int MIN_PLAYERS = 2;
 };
-

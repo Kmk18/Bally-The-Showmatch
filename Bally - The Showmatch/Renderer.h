@@ -30,6 +30,7 @@ public:
     void DrawAngleIndicator(const Vector2& position, float angle, float length);
     void DrawHealthBar(const Vector2& position, float health, float maxHealth, float width, float height);
     void DrawText(const Vector2& position, const char* text, const Color& color);
+    void GetTextSize(const char* text, int* width, int* height) const;
 
     bool LoadFont(const char* fontPath, int pointSize);
 
@@ -41,6 +42,7 @@ public:
     void Clear(const Color& color = Color(50, 50, 50, 255));
 
     SDL_Renderer* GetSDLRenderer() const { return m_renderer; }
+    TTF_Font* GetFont() const { return m_font; }
     Vector2 GetWindowSize() const { return Vector2(static_cast<float>(m_windowWidth), static_cast<float>(m_windowHeight)); }
 
     // Camera offset

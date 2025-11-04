@@ -179,7 +179,7 @@ void Game::Update(float deltaTime) {
     if (m_gameState == GameState::MAIN_MENU || m_gameState == GameState::GAME_MODE_SELECTION ||
         m_gameState == GameState::PLAYER_COUNT_SELECTION || m_gameState == GameState::MAP_SELECTION ||
         m_gameState == GameState::SETTINGS ||
-        m_gameState == GameState::SOUND_SETTINGS || m_gameState == GameState::KEYBIND_SETTINGS ||
+        m_gameState == GameState::SOUND_SETTINGS ||
         m_gameState == GameState::PAUSED) {
         // Get mouse position and click state for menu
         Vector2 mousePos = m_inputManager->GetMousePosition();
@@ -196,8 +196,7 @@ void Game::Update(float deltaTime) {
                 // Exit to Main Menu was clicked
                 ReturnToMenu();
             } else if (menuState == GameState::SETTINGS ||
-                      menuState == GameState::SOUND_SETTINGS ||
-                      menuState == GameState::KEYBIND_SETTINGS) {
+                      menuState == GameState::SOUND_SETTINGS) {
                 // Settings navigation from pause menu
                 m_gameState = menuState;
             }
@@ -634,7 +633,6 @@ void Game::HandleEvents() {
                     // Resume the game
                     m_gameState = GameState::IN_GAME;
                 }
-                // ESC key no longer closes the game
             }
             else if (event.key.scancode == SDL_SCANCODE_R && m_gameEnded) {
                 ResetGame();
@@ -666,8 +664,7 @@ void Game::Render() {
 
     // Render game with overlays (settings/pause accessed during gameplay)
     if (m_gameState == GameState::IN_GAME || m_gameState == GameState::PAUSED ||
-        m_gameState == GameState::SETTINGS || m_gameState == GameState::SOUND_SETTINGS ||
-        m_gameState == GameState::KEYBIND_SETTINGS) {
+        m_gameState == GameState::SETTINGS || m_gameState == GameState::SOUND_SETTINGS) {
 
         // Set camera offset for world-space rendering
         m_renderer->SetCameraOffset(m_camera->GetPosition());
@@ -722,7 +719,7 @@ void Game::Render() {
 
         // Draw menu overlay if paused or in settings
         if (m_gameState == GameState::PAUSED || m_gameState == GameState::SETTINGS ||
-            m_gameState == GameState::SOUND_SETTINGS || m_gameState == GameState::KEYBIND_SETTINGS) {
+            m_gameState == GameState::SOUND_SETTINGS) {
             m_menu->Render();
         }
     }

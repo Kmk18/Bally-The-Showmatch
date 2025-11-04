@@ -14,7 +14,6 @@ enum class GameState {
     MAP_SELECTION,
     SETTINGS,
     SOUND_SETTINGS,
-    KEYBIND_SETTINGS,
     IN_GAME,
     PAUSED,
     GAME_OVER
@@ -29,11 +28,12 @@ struct MenuButton {
     std::string text;
     Vector2 position;
     Vector2 size;
-    Color color;
-    Color hoverColor;
     std::function<void()> onClick;
-    bool isHovered;
+
     bool isVisible;
+    SDL_Texture* texture = nullptr;  // Button texture
+    int textureIndex = 0;  // Index for looking up texture dimensions
+    bool usesSmallTexture = false;  // Whether this button uses small variant
 };
 
 class Menu {
@@ -88,6 +88,15 @@ private:
     SDL_Texture* m_backgroundTexture;
     bool m_backgroundLoaded;
     
+    // Button textures
+    SDL_Texture* m_buttonTextures[4];  // aqua, orange, pink, purple
+    SDL_Texture* m_smallButtonTextures[4];  // small variants
+    int m_buttonTextureWidths[4];  // Texture widths for aspect ratio
+    int m_buttonTextureHeights[4];  // Texture heights for aspect ratio
+    int m_smallButtonTextureWidths[4];  // Small texture widths
+    int m_smallButtonTextureHeights[4];  // Small texture heights
+    int m_buttonTextureIndex;  // Current index for cycling through colors
+    
     // Callbacks
     std::function<void()> m_onStartGame;
     std::function<void()> m_onExit;
@@ -100,17 +109,17 @@ private:
     void CreatePauseMenu();
     void CreateSettingsMenu();
     void CreateSoundSettingsMenu();
-    void CreateKeybindSettingsMenu();
     
     // Button management
     void ClearButtons();
     void AddButton(const std::string& text, const Vector2& position, const Vector2& size,
-                  const Color& color, const Color& hoverColor, std::function<void()> onClick);
-    void UpdateButtonHover(const Vector2& mousePosition);
+                  std::function<void()> onClick,
+                  int textureIndex = -1);  // -1 means auto-assign (cycle), 0=aqua, 1=orange, 2=pink, 3=purple
     void HandleButtonClicks();
     
     // Rendering
     void LoadBackground();
+    void LoadButtonTextures();
     void DrawBackground();
     void DrawTitle();
     void DrawButtons();

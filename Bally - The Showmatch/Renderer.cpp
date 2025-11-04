@@ -40,21 +40,19 @@ bool Renderer::Initialize() {
 
     SDL_SetRenderDrawBlendMode(m_renderer, SDL_BLENDMODE_BLEND);
 
-    if (TTF_Init() == -1) {
+    if (!TTF_Init()) {
         return false;
     }
 
     if (!m_font) {
-        // Try to load Pixelify Sans font from Google Fonts
-        // Font files are located in the fonts/ folder at project root
         const char* candidateFonts[] = {
-            "../fonts/PixelifySans-Regular.ttf",  // From x64/Debug/ executable location
+            "../fonts/PixelifySans-Regular.ttf",
+            "fonts/PixelifySans-Regular.ttf",    
             "../fonts/PixelifySans-Medium.ttf",
-            "../fonts/PixelifySans-SemiBold.ttf",
-            "../fonts/PixelifySans-Bold.ttf",
-            "fonts/PixelifySans-Regular.ttf",      // From project root
             "fonts/PixelifySans-Medium.ttf",
+            "../fonts/PixelifySans-SemiBold.ttf",
             "fonts/PixelifySans-SemiBold.ttf",
+            "../fonts/PixelifySans-Bold.ttf",
             "fonts/PixelifySans-Bold.ttf",
             // Fallback to Windows fonts if Pixelify Sans not found
             "C:\\Windows\\Fonts\\segoeui.ttf",
@@ -63,12 +61,12 @@ bool Renderer::Initialize() {
         };
         for (const char* path : candidateFonts) {
             if (LoadFont(path, 16)) {
-                std::cout << "Loaded font: " << path << std::endl;
+                std::cout << "Successfully loaded font: " << path << std::endl;
                 break;
             }
         }
         if (!m_font) {
-            std::cerr << "Warning: Failed to load any font!" << std::endl;
+            std::cerr << "Warning: Failed to load any font! Text rendering will not work." << std::endl;
         }
     }
     return true;
@@ -278,16 +276,49 @@ void Renderer::DrawText(const Vector2& position, const char* text, const Color& 
     SDL_DestroySurface(surface);
 }
 
+void Renderer::GetTextSize(const char* text, int* width, int* height) const {
+    if (!text || !*text || !m_font) {
+        if (width) *width = 0;
+        if (height) *height = 0;
+        return;
+    }
+    
+    // Render to surface to get dimensions (SDL3 compatible approach)
+    SDL_Color sdlColor{ 255, 255, 255, 255 };
+    SDL_Surface* surface = TTF_RenderText_Blended_Wrapped(
+        m_font,
+        text,
+        static_cast<size_t>(SDL_strlen(text)),
+        sdlColor,
+        0
+    );
+    if (surface) {
+        if (width) *width = surface->w;
+        if (height) *height = surface->h;
+        SDL_DestroySurface(surface);
+    } else {
+        if (width) *width = 0;
+        if (height) *height = 0;
+    }
+}
+
 bool Renderer::LoadFont(const char* fontPath, int pointSize) {
     if (!TTF_WasInit()) {
-        if (TTF_Init() == -1) return false;
+        if (TTF_Init() == -1) {
+            std::cerr << "TTF_Init failed: " << SDL_GetError() << std::endl;
+            return false;
+        }
     }
     if (m_font) {
         TTF_CloseFont(m_font);
         m_font = nullptr;
     }
     m_font = TTF_OpenFont(fontPath, pointSize);
-    return m_font != nullptr;
+    if (!m_font) {
+        std::cerr << "Failed to load font: " << fontPath << " - " << SDL_GetError() << std::endl;
+        return false;
+    }
+    return true;
 }
 
 void Renderer::DrawPlatform(const Vector2& position, float width, float height) {
