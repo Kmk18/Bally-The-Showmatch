@@ -13,7 +13,7 @@ public:
     void Update(float deltaTime);
     void Draw(Renderer* renderer) const;
     void OnCollected(Player* player);
-    bool IsExpired(int currentTurn) const { return currentTurn >= m_spawnTurn + 3; }
+    bool IsExpired(int currentTurn, int playerCount) const { return currentTurn >= m_spawnTurn + (playerCount - 1); }
 
     const Vector2& GetPosition() const { return m_position; }
     float GetRadius() const { return m_radius; }

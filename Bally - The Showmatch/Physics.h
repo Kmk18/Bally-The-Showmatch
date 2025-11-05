@@ -127,6 +127,8 @@ private:
 
     // Create explosion animation at position
     void CreateExplosion(const Vector2& position, float radius, bool isBigExplosion);
+    void CreateTeleportAnimation(const Vector2& position, float radius);
+    void CreateHealAnimation(const Vector2& position, float radius);
 
     // Debug visualization
     bool m_debugDrawContours;
@@ -148,7 +150,6 @@ private:
     void CheckProjectileCollisions(std::vector<std::unique_ptr<Player>>& players,
         std::vector<std::unique_ptr<SkillOrb>>& skillOrbs);
     void CheckPlayerTerrainCollisions(std::vector<std::unique_ptr<Player>>& players);
-    void CheckPlayerPlatformCollisions(std::vector<std::unique_ptr<Player>>& players);
     void CheckSkillOrbCollisions(std::vector<std::unique_ptr<Player>>& players,
         std::vector<std::unique_ptr<SkillOrb>>& skillOrbs);
 

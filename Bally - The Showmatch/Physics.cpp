@@ -7,11 +7,6 @@
 #include <cmath>
 #include <algorithm>
 
-// Custom clamp function for C++14 compatibility
-template<typename T>
-constexpr const T& clamp(const T& v, const T& lo, const T& hi) {
-    return (v < lo) ? lo : (hi < v) ? hi : v;
-}
 
 Projectile::Projectile(const Vector2& position, const Vector2& velocity, ProjectileType type, int ownerId)
     : m_position(position), m_velocity(velocity), m_acceleration(Vector2::Zero()), m_radius(DEFAULT_RADIUS),
@@ -364,7 +359,6 @@ void Physics::CheckCollisions(std::vector<std::unique_ptr<Player>>& players,
 
     CheckProjectileCollisions(players, skillOrbs);
 
-    // Only use terrain collision (no platform)
     if (m_terrain) {
         CheckPlayerTerrainCollisions(players);
     }
@@ -387,7 +381,6 @@ void Physics::CheckProjectileCollisions(std::vector<std::unique_ptr<Player>>& pl
             float combinedRadius = orb->GetRadius() + projectile->GetRadius();
 
             if (distanceLength < combinedRadius) {
-                // Find the owner player and give them the skill
                 for (auto& player : players) {
                     if (player->GetId() == projectile->GetOwnerId()) {
                         orb->OnCollected(player.get());
@@ -397,13 +390,9 @@ void Physics::CheckProjectileCollisions(std::vector<std::unique_ptr<Player>>& pl
             }
         }
 
-        // Check collision with terrain only (no platform)
         bool hitTerrain = false;
-        if (m_terrain) {
-            // Check if projectile hit terrain
-            if (m_terrain->IsCircleSolid(projectile->GetPosition(), projectile->GetRadius())) {
-                hitTerrain = true;
-            }
+        if (m_terrain && m_terrain->IsCircleSolid(projectile->GetPosition(), projectile->GetRadius())) {
+            hitTerrain = true;
         }
 
         if (hitTerrain) {
@@ -412,15 +401,32 @@ void Physics::CheckProjectileCollisions(std::vector<std::unique_ptr<Player>>& pl
                 // Apply healing to all allies in AOE
                 ApplyHealing(projectile->GetPosition(), projectile->GetExplosionRadius(),
                     projectile->GetOwnerId(), players);
+                CreateHealAnimation(projectile->GetPosition(), projectile->GetExplosionRadius());
             }
             else if (projectile->HasTeleportBall()) {
                 // Teleport the owner to this location (unless it's void)
                 Vector2 teleportPos = projectile->GetPosition();
                 // Make sure teleport position is within map bounds
                 float mapHeight = m_terrain ? static_cast<float>(m_terrain->GetHeight()) : 800.0f;
+                CreateTeleportAnimation(projectile->GetPosition(), std::max(projectile->GetExplosionRadius(), 50.0f));
+                
                 if (teleportPos.y >= 0 && teleportPos.y < mapHeight) {
                     for (auto& player : players) {
                         if (player->GetId() == projectile->GetOwnerId()) {
+                            int teleportX = (int)teleportPos.x;
+                            int groundY = m_terrain ? m_terrain->FindTopSolidPixel(teleportX, (int)teleportPos.y) : -1;
+                            
+                            if (groundY >= 0) {
+                                float playerRadius = player->GetRadius();
+                                float buffer = 5.0f;
+                                teleportPos.y = (float)groundY - playerRadius - buffer;
+                            }
+                            else {
+                                // If no ground found, add height to prevent falling through
+                                float playerRadius = player->GetRadius();
+                                teleportPos.y -= playerRadius * 2.0f;
+                            }
+                            
                             player->SetPosition(teleportPos);
                             break;
                         }
@@ -463,12 +469,33 @@ void Physics::CheckProjectileCollisions(std::vector<std::unique_ptr<Player>>& pl
                     // Apply healing to all allies in AOE
                     ApplyHealing(projectile->GetPosition(), projectile->GetExplosionRadius(),
                         projectile->GetOwnerId(), players);
+                    CreateHealAnimation(projectile->GetPosition(), projectile->GetExplosionRadius());
                 }
                 else if (projectile->HasTeleportBall()) {
+                    CreateTeleportAnimation(projectile->GetPosition(), std::max(projectile->GetExplosionRadius(), 50.0f));
+                    
                     // Teleport the owner to this location
                     for (auto& owner : players) {
                         if (owner->GetId() == projectile->GetOwnerId()) {
-                            owner->SetPosition(player->GetPosition());
+                            Vector2 teleportPos = player->GetPosition();
+                            
+                            // Find ground surface at teleport X position to ensure safe placement
+                            int teleportX = (int)teleportPos.x;
+                            int groundY = m_terrain ? m_terrain->FindTopSolidPixel(teleportX, (int)teleportPos.y) : -1;
+                            
+                            if (groundY >= 0) {
+                                // Place player above ground with player radius + buffer
+                                float playerRadius = owner->GetRadius();
+                                float buffer = 5.0f;
+                                teleportPos.y = (float)groundY - playerRadius - buffer;
+                            }
+                            else {
+                                // If no ground found, add height to prevent falling through
+                                float playerRadius = owner->GetRadius();
+                                teleportPos.y -= playerRadius * 2.0f;
+                            }
+                            
+                            owner->SetPosition(teleportPos);
                             break;
                         }
                     }
@@ -485,7 +512,6 @@ void Physics::CheckProjectileCollisions(std::vector<std::unique_ptr<Player>>& pl
                         ApplyExplosion(projectile->GetPosition(), projectile->GetExplosionRadius(),
                             projectile->GetExplosionForce(), players);
 
-                        // Create explosion animation (use big explosion if explosive buff, otherwise small)
                         bool isBigExplosion = projectile->HasExplosiveBall();
                         CreateExplosion(projectile->GetPosition(), projectile->GetExplosionRadius(), isBigExplosion);
 
@@ -503,35 +529,6 @@ void Physics::CheckProjectileCollisions(std::vector<std::unique_ptr<Player>>& pl
     }
 }
 
-void Physics::CheckPlayerPlatformCollisions(std::vector<std::unique_ptr<Player>>& players) {
-    for (auto& player : players) {
-        if (!player->IsAlive()) continue;
-
-        Vector2 pos = player->GetPosition();
-
-        // Check if player fell into the void (below map)
-        // Use terrain height if available, otherwise fallback to default
-        float mapHeight = m_terrain ? static_cast<float>(m_terrain->GetHeight()) : 800.0f;
-        float deathThreshold = mapHeight + 50.0f;  // Map height + buffer
-        if (pos.y > deathThreshold) {
-            player->TakeDamage(player->GetMaxHealth());  // Kill the player
-            continue;
-        }
-
-        CollisionInfo collision = CheckCirclePlatformCollision(pos, player->GetRadius());
-        if (collision.hasCollision) {
-            // Push player out of platform
-            Vector2 correction = collision.normal * collision.penetration;
-            player->SetPosition(pos + correction);
-
-            // Stop downward velocity
-            Vector2 velocity = player->GetVelocity();
-            if (velocity.y > 0) {
-                player->SetVelocity(Vector2(velocity.x, 0));
-            }
-        }
-    }
-}
 
 void Physics::CheckSkillOrbCollisions(std::vector<std::unique_ptr<Player>>& players,
     std::vector<std::unique_ptr<SkillOrb>>& skillOrbs) {
@@ -580,35 +577,6 @@ CollisionInfo Physics::CheckCircleCollision(const Vector2& pos1, float radius1,
     return info;
 }
 
-CollisionInfo Physics::CheckCirclePlatformCollision(const Vector2& pos, float radius) const {
-    CollisionInfo info;
-    info.hasCollision = false;
-
-    // Check if circle intersects with platform rectangle
-    Vector2 closestPoint;
-    closestPoint.x = clamp(pos.x, m_platformPosition.x, m_platformPosition.x + m_platformWidth);
-    closestPoint.y = clamp(pos.y, m_platformPosition.y, m_platformPosition.y + m_platformHeight);
-
-    Vector2 distance = pos - closestPoint;
-    float distanceLength = distance.Length();
-
-    if (distanceLength < radius) {
-        info.hasCollision = true;
-        info.penetration = radius - distanceLength;
-
-        if (distanceLength > 0) {
-            info.normal = distance * (1.0f / distanceLength);
-        }
-        else {
-            // Circle is inside platform, push up
-            info.normal = Vector2(0, -1);
-        }
-
-        info.point = closestPoint;
-    }
-
-    return info;
-}
 
 void Physics::ApplyExplosion(const Vector2& center, float radius, float force,
     std::vector<std::unique_ptr<Player>>& players) {
@@ -619,8 +587,6 @@ void Physics::ApplyExplosion(const Vector2& center, float radius, float force,
         float distanceLength = distance.Length();
 
         if (distanceLength < radius && distanceLength > 0) {
-            // Hit displacement removed - players are no longer pushed by explosions
-            // Only apply damage based on distance
             float damage = 30.0f * (1.0f - (distanceLength / radius));
             player->TakeDamage(damage);
         }
@@ -645,9 +611,9 @@ void Physics::CheckPlayerTerrainCollisions(std::vector<std::unique_ptr<Player>>&
         // Check if player fell into the void (below map)
         // Use terrain height if available, otherwise fallback to default
         float mapHeight = static_cast<float>(m_terrain->GetHeight());
-        float deathThreshold = mapHeight + 50.0f;  // Map height + buffer
+        float deathThreshold = mapHeight + 50.0f;
         if (pos.y > deathThreshold) {
-            player->TakeDamage(player->GetMaxHealth());  // Kill the player
+            player->TakeDamage(player->GetMaxHealth());
             continue;
         }
 
@@ -661,13 +627,9 @@ void Physics::CheckPlayerTerrainCollisions(std::vector<std::unique_ptr<Player>>&
         const float maxUpwardSearch = radius * 0.5f; // Only search slightly above player (prevent ceiling detection)
         int samples[sampleCount];
         for (int i = 0; i < sampleCount; i++) {
-            float t = (i / (float)(sampleCount - 1)) - 0.5f; // -0.5 to 0.5
-            int sampleX = (int)(pos.x + t * radius * sampleWidthMultiplier); // Cover character width
-            int startY = (int)(pos.y + radius); // Start from bottom of player
-
-            // Search from slightly above player down to far below
-            // This prevents detecting ceiling/overhang in hollow areas
-            // Start search from top of screen (0) to ensure we find ground even if player is far above
+            float t = (i / (float)(sampleCount - 1)) - 0.5f;
+            int sampleX = (int)(pos.x + t * radius * sampleWidthMultiplier);
+            int startY = (int)(pos.y + radius);
             int searchStartY = std::max(0, (int)(startY - maxUpwardSearch));
             samples[i] = m_terrain->FindTopSolidPixel(sampleX, searchStartY);
         }
@@ -748,7 +710,6 @@ void Physics::CheckPlayerTerrainCollisions(std::vector<std::unique_ptr<Player>>&
             }
             // Case 4: Player is far above ground (>15px) - let gravity work, but check collision
             else if (distanceToGround > 15.0f && velocity.y > 0) {
-                // Just apply gravity naturally, will be caught by cases above as player gets closer
             }
             // Case 5: Player falling and would pass through ground this frame
             else if (velocity.y > 0 && distanceToGround > 0) {
@@ -765,23 +726,20 @@ void Physics::CheckPlayerTerrainCollisions(std::vector<std::unique_ptr<Player>>&
 
         // Handle steep slope traversal (Gunny-style climbing)
         if (onGround && std::abs(velocity.x) > 0.1f) {
-            // Check ahead in movement direction for terrain
-            float lookAheadDist = radius * 2.0f; // Increased look-ahead for better slope detection
+            float lookAheadDist = radius * 2.0f;
             int checkX = (int)(pos.x + (velocity.x > 0 ? lookAheadDist : -lookAheadDist));
             int checkStartY = (int)(pos.y + radius);
-
-            // Check for ground ahead - increased search range upward to detect very steep slopes
             int groundAhead = m_terrain->FindTopSolidPixel(checkX, checkStartY - (int)(radius * 6));
 
             if (groundAhead >= 0) {
                 float heightDiff = groundAhead - groundY;
 
-                // Allow climbing extremely steep slopes (up to ~85 degrees, 7x radius height difference)
+                // Allow climbing extremely steep slopes
                 // Further increased to allow near-vertical terrain traversal
                 if (heightDiff < radius * 8.0f && heightDiff > -radius * 4) {
                     // Smoothly adjust Y to climb slope - faster interpolation for responsive climbing
                     float targetClimbY = groundAhead - radius;
-                    pos.y += (targetClimbY - pos.y) * 0.3f; // Increased from 0.3f to 0.4f for even faster climbing
+                    pos.y += (targetClimbY - pos.y) * 0.3f;
                 }
                 // If slope is too steep, stop horizontal movement
                 // Increased threshold to 7x radius to match climbing capability
@@ -813,8 +771,8 @@ void Physics::CheckPlayerTerrainCollisions(std::vector<std::unique_ptr<Player>>&
 
         // Apply push out correction if embedded
         if (embedded && embedCount > 0) {
-            pushOut = pushOut * (1.0f / embedCount); // Average direction
-            pos = pos + pushOut * 2.0f; // Push out
+            pushOut = pushOut * (1.0f / embedCount);
+            pos = pos + pushOut * 2.0f;
 
             // Reduce velocity when hitting walls
             if (std::abs(pushOut.x) > 0.1f) {
@@ -853,7 +811,7 @@ void Physics::ApplyHealing(const Vector2& center, float radius, int ownerId,
         Vector2 distance = player->GetPosition() - center;
         float distanceLength = distance.Length();
 
-        // Heal all players (including thrower) within radius
+        // Heal all players within radius
         if (distanceLength < radius) {
             // Heal for 30% of max health
             float healAmount = player->GetMaxHealth() * 0.3f;
@@ -863,10 +821,31 @@ void Physics::ApplyHealing(const Vector2& center, float radius, int ownerId,
 }
 
 void Physics::CreateExplosion(const Vector2& position, float radius, bool isBigExplosion) {
-    if (!m_renderer) return; // Can't create explosion without renderer
+    if (!m_renderer) return;
 
     auto explosion = std::make_unique<ExplosionAnimation>(position, radius, isBigExplosion);
     if (explosion->Load(m_renderer)) {
         m_explosions.push_back(std::move(explosion));
     }
 }
+
+void Physics::CreateTeleportAnimation(const Vector2& position, float radius) {
+    if (!m_renderer) return;
+
+    float animRadius = std::max(radius, 50.0f);
+    auto animation = std::make_unique<ExplosionAnimation>(position, animRadius, ExplosionAnimationType::TELEPORT);
+    if (animation->Load(m_renderer)) {
+        m_explosions.push_back(std::move(animation));
+    }
+}
+
+void Physics::CreateHealAnimation(const Vector2& position, float radius) {
+    if (!m_renderer) return;
+
+    float animRadius = std::max(radius, 50.0f);
+    auto animation = std::make_unique<ExplosionAnimation>(position, animRadius, ExplosionAnimationType::HEAL);
+    if (animation->Load(m_renderer)) {
+        m_explosions.push_back(std::move(animation));
+    }
+}
+

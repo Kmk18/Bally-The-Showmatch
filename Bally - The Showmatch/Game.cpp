@@ -473,8 +473,7 @@ void Game::ProcessTurn() {
         if (m_currentPlayerIndex < m_players.size()) {
             m_players[m_currentPlayerIndex]->StartTurn();
         }
-        // Spawn skill orbs at start of first turn
-        SpawnSkillOrbs();
+        // Don't spawn orbs at game start - wait for [playercount - 1] turns
         m_ui->ShowMessage("Game Started! Player " + std::to_string(m_currentPlayerIndex + 1) + "'s turn");
         return;
     }
@@ -496,14 +495,18 @@ void Game::ProcessTurn() {
         m_turnTimer = TURN_DURATION;
         m_players[m_currentPlayerIndex]->StartTurn();
 
-        // Spawn skill orbs at start of turn
-        SpawnSkillOrbs();
+        // Spawn skill orbs after [playercount - 1] turns, then every [playercount - 1] turns
+        int playerCount = static_cast<int>(m_players.size());
+        int spawnInterval = playerCount - 1;
+        if (spawnInterval > 0 && m_turnCounter >= spawnInterval && (m_turnCounter % spawnInterval == 0)) {
+            SpawnSkillOrbs();
+        }
 
-        // Remove expired skill orbs (older than 3 turns)
+        // Remove expired skill orbs (older than [playercount - 1] turns)
         m_skillOrbs.erase(
             std::remove_if(m_skillOrbs.begin(), m_skillOrbs.end(),
-                [this](const std::unique_ptr<SkillOrb>& orb) {
-                    return orb->IsExpired(m_turnCounter);
+                [this, playerCount](const std::unique_ptr<SkillOrb>& orb) {
+                    return orb->IsExpired(m_turnCounter, playerCount);
                 }),
             m_skillOrbs.end()
         );
@@ -544,14 +547,18 @@ void Game::ProcessTurn() {
         m_turnTimer = TURN_DURATION;
         m_players[m_currentPlayerIndex]->StartTurn();
 
-        // Spawn skill orbs at start of turn
-        SpawnSkillOrbs();
+        // Spawn skill orbs after [playercount - 1] turns, then every [playercount - 1] turns
+        int playerCount = static_cast<int>(m_players.size());
+        int spawnInterval = playerCount - 1;
+        if (spawnInterval > 0 && m_turnCounter >= spawnInterval && (m_turnCounter % spawnInterval == 0)) {
+            SpawnSkillOrbs();
+        }
 
-        // Remove expired skill orbs (older than 3 turns)
+        // Remove expired skill orbs (older than [playercount - 1] turns)
         m_skillOrbs.erase(
             std::remove_if(m_skillOrbs.begin(), m_skillOrbs.end(),
-                [this](const std::unique_ptr<SkillOrb>& orb) {
-                    return orb->IsExpired(m_turnCounter);
+                [this, playerCount](const std::unique_ptr<SkillOrb>& orb) {
+                    return orb->IsExpired(m_turnCounter, playerCount);
                 }),
             m_skillOrbs.end()
         );
@@ -569,20 +576,78 @@ void Game::SpawnSkillOrbs() {
     float padding = 100.0f;
     float minX = padding;
     float maxX = mapWidth - padding;
-    float minY = 200.0f; // Keep some distance from top
-    float maxY = mapHeight - 200.0f; // Keep some distance from bottom
     
     std::random_device rd;
     std::mt19937 gen(rd());
     std::uniform_real_distribution<float> xDist(minX, maxX);
-    std::uniform_real_distribution<float> yDist(minY, maxY);
     std::uniform_int_distribution<int> skillDist(0, static_cast<int>(SkillType::COUNT) - 1);
-    std::uniform_int_distribution<int> orbCountDist(2, 5);
 
-    // Spawn 2-5 skill orbs
-    int numOrbs = orbCountDist(gen);
+    // Skill orb constants
+    const float orbRadius = 15.0f; // DEFAULT_RADIUS from SkillOrb
+    const float minOrbDistance = orbRadius * 2.5f; // Minimum distance between orbs (2.5x radius)
+    
+    // Spawn mid-air - use height range from 20% to 80% of map height
+    float minY = mapHeight * 0.2f;
+    float maxY = mapHeight * 0.8f;
+    std::uniform_real_distribution<float> yDist(minY, maxY);
+    
+    // Spawn [playercount + 2] skill orbs
+    int playerCount = static_cast<int>(m_players.size());
+    int numOrbs = playerCount + 2;
+    int attemptsPerOrb = 50; // Increased attempts to find non-overlapping positions
+    
+    // Store positions of already placed orbs (including existing ones) to prevent overlap
+    std::vector<Vector2> existingOrbPositions;
+    for (const auto& orb : m_skillOrbs) {
+        if (!orb->IsCollected()) {
+            existingOrbPositions.push_back(orb->GetPosition());
+        }
+    }
+    
     for (int i = 0; i < numOrbs; ++i) {
-        Vector2 position(xDist(gen), yDist(gen));
+        Vector2 position;
+        bool foundValidPosition = false;
+        
+        // Try to find a valid position that doesn't overlap
+        for (int attempt = 0; attempt < attemptsPerOrb; ++attempt) {
+            float targetX = xDist(gen);
+            float targetY = yDist(gen);
+            Vector2 testPos(targetX, targetY);
+            
+            // Check if position is inside terrain
+            bool insideTerrain = false;
+            if (m_currentMap && m_currentMap->GetTerrain()) {
+                insideTerrain = m_currentMap->GetTerrain()->IsCircleSolid(testPos, orbRadius);
+            }
+            
+            if (!insideTerrain) {
+                // Check if position overlaps with existing orbs (both old and newly placed)
+                bool overlaps = false;
+                for (const Vector2& existingPos : existingOrbPositions) {
+                    Vector2 distance = testPos - existingPos;
+                    if (distance.Length() < minOrbDistance) {
+                        overlaps = true;
+                        break;
+                    }
+                }
+                
+                if (!overlaps) {
+                    position = testPos;
+                    existingOrbPositions.push_back(position); // Add to list to prevent future overlaps
+                    foundValidPosition = true;
+                    break;
+                }
+            }
+        }
+        
+        // If we couldn't find a valid position, use a fallback (middle of map with offset)
+        if (!foundValidPosition) {
+            float fallbackX = mapWidth * 0.5f + (i * 50.0f);
+            float fallbackY = mapHeight * 0.4f + (i * 30.0f);
+            position = Vector2(fallbackX, fallbackY);
+            existingOrbPositions.push_back(position);
+        }
+        
         SkillType skillType = static_cast<SkillType>(skillDist(gen));
         m_skillOrbs.push_back(std::make_unique<SkillOrb>(position, skillType, m_turnCounter));
     }
@@ -718,10 +783,6 @@ void Game::HandleEvents() {
             else if (event.key.scancode == SDL_SCANCODE_R && m_gameEnded) {
                 ResetGame();
             }
-            break;
-
-        case SDL_EVENT_WINDOW_RESIZED:
-            // Handle window resize if needed
             break;
         }
     }

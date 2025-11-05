@@ -101,6 +101,11 @@ void UI::RenderScreenSpace(const std::vector<std::unique_ptr<Player>>& players,
 
     // Draw minimap
     DrawMinimap(cameraPos, mapWidth, mapHeight, players);
+
+    // Draw power bar ruler at bottom of screen (only for current player)
+    if (currentPlayerIndex < players.size() && players[currentPlayerIndex]->IsAlive()) {
+        DrawPowerBarRuler(*players[currentPlayerIndex]);
+    }
 }
 
 void UI::DrawHUD(const std::vector<std::unique_ptr<Player>>& players) {
@@ -202,10 +207,6 @@ void UI::DrawAimingUI(const Player& player, const Vector2& mousePosition) {
     float displayAngle = std::atan2(velocity.y, velocity.x) * 180.0f / M_PI;
     DrawAngleIndicator(playerPos, displayAngle, ANGLE_INDICATOR_LENGTH);
 
-    // Draw power indicator
-    Vector2 powerIndicatorPos = playerPos + Vector2(0, -60);
-    DrawPowerIndicator(powerIndicatorPos, player.GetPower(), 100.0f);
-
     // Draw trajectory preview using the same velocity (matching Game.cpp projectile speed)
     m_renderer->DrawProjectileTrajectory(playerPos, velocity * (powerRatio * 1800.0f), 980.0f, 60);
 
@@ -304,6 +305,63 @@ void UI::DrawPowerIndicator(const Vector2& position, float power, float maxPower
 
     // Outline
     m_renderer->DrawRect(position, 100, 10, Color(255, 255, 255, 255), false);
+}
+
+void UI::DrawPowerBarRuler(const Player& player) {
+    const float barWidth = 600.0f;
+    const float barHeight = 30.0f;
+    const float barX = 100.0f; // Center it: (1200 - 1000) / 2 = 100
+    const float barY = 800.0f - barHeight - 20.0f; // 20px from bottom
+    const float maxPower = 100.0f;
+    
+    float power = player.GetPower();
+    float normalizedPower = clamp(power / maxPower, 0.0f, 1.0f);
+    
+    // Background bar
+    m_renderer->DrawRect(Vector2(barX, barY), barWidth, barHeight, Color(30, 30, 30, 30));
+    
+    // Power fill bar
+    Color powerColor;
+    if (normalizedPower < 0.3f) {
+        powerColor = Color(0, 255, 0, 255); // Green
+    }
+    else if (normalizedPower < 0.7f) {
+        powerColor = Color(255, 255, 0, 255); // Yellow
+    }
+    else {
+        powerColor = Color(255, 0, 0, 255); // Red
+    }
+    m_renderer->DrawRect(Vector2(barX, barY), barWidth * normalizedPower, barHeight, powerColor);
+    
+    // Draw ruler marks and numbers (0-100, interval 5)
+    const int interval = 5;
+    const int maxValue = 100;
+    Color tickColor = Color(255, 255, 255, 255);
+    Color textColor = Color(255, 255, 255, 255);
+    
+    for (int value = 0; value <= maxValue; value += interval) {
+        float x = barX + (barWidth * value / maxValue);
+        
+        // Draw tick mark inside the ruler - longer ticks for multiples of 10, shorter for multiples of 5
+        float tickHeight = (value % 10 == 0) ? barHeight * 0.8f : barHeight * 0.5f;
+        float tickStartY = barY + barHeight; // Start from bottom of bar
+        float tickEndY = tickStartY - tickHeight; // Draw upward inside the bar
+        m_renderer->DrawLine(Vector2(x, tickStartY), Vector2(x, tickEndY), tickColor, 2.0f);
+        
+        // Draw number label above the ruler
+        std::string label = std::to_string(value);
+        int textWidth = 0, textHeight = 0;
+        m_renderer->GetTextSize(label.c_str(), &textWidth, &textHeight);
+        Vector2 textPos(x - textWidth / 2.0f, barY - textHeight - 5.0f);
+        m_renderer->DrawText(textPos, label.c_str(), textColor);
+    }
+    
+    // Draw current power value indicator (vertical line)
+    float powerX = barX + (barWidth * normalizedPower);
+    m_renderer->DrawLine(Vector2(powerX, barY), Vector2(powerX, barY + barHeight), Color(255, 255, 255, 255), 3.0f);
+    
+    // Outline
+    m_renderer->DrawRect(Vector2(barX, barY), barWidth, barHeight, Color(255, 255, 255, 255), false);
 }
 
 void UI::DrawAngleIndicator(const Vector2& position, float angle, float length) {

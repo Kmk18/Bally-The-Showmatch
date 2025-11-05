@@ -78,6 +78,7 @@ private:
     void DrawCurrentPlayerIndicator(int playerIndex);
     void DrawAimingUI(const Player& player, const Vector2& mousePosition);
     void DrawPowerIndicator(const Vector2& position, float power, float maxPower);
+    void DrawPowerBarRuler(const Player& player);
     void DrawAngleIndicator(const Vector2& position, float angle, float length);
     void DrawMessages();
     void DrawGameOverScreen(int winnerId);
