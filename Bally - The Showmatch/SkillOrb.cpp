@@ -1,12 +1,20 @@
 #include "SkillOrb.h"
 #include "Player.h"
+#include "Renderer.h"
 #include <cmath>
+#include <iostream>
 
 SkillOrb::SkillOrb(const Vector2& position, SkillType skillType, int spawnTurn)
     : m_position(position), m_radius(DEFAULT_RADIUS), m_skillType(skillType),
     m_collected(false), m_spawnTurn(spawnTurn), m_animTime(0.0f),
-    m_bobOffset(0.0f), m_bobSpeed(BOB_SPEED) {
-    m_color = GetSkillColor();
+    m_bobOffset(0.0f), m_bobSpeed(BOB_SPEED), m_texture(nullptr) {
+}
+
+SkillOrb::~SkillOrb() {
+    if (m_texture) {
+        SDL_DestroyTexture(m_texture);
+        m_texture = nullptr;
+    }
 }
 
 void SkillOrb::Update(float deltaTime) {
@@ -16,30 +24,50 @@ void SkillOrb::Update(float deltaTime) {
     UpdateAnimation(deltaTime);
 }
 
+bool SkillOrb::LoadTexture(Renderer* renderer) {
+    if (!renderer) return false;
+
+    std::string texturePath = GetTexturePath();
+    SDL_Surface* surface = IMG_Load(texturePath.c_str());
+    if (!surface) {
+        std::cerr << "Failed to load skill orb texture: " << texturePath << " - " << SDL_GetError() << std::endl;
+        return false;
+    }
+
+    m_texture = SDL_CreateTextureFromSurface(renderer->GetSDLRenderer(), surface);
+    SDL_DestroySurface(surface);
+
+    if (!m_texture) {
+        std::cerr << "Failed to create skill orb texture: " << SDL_GetError() << std::endl;
+        return false;
+    }
+
+    return true;
+}
+
 void SkillOrb::Draw(Renderer* renderer) const {
     if (m_collected) return;
 
     // Draw orb with bobbing animation
     Vector2 drawPos = m_position + Vector2(0, m_bobOffset);
 
-    // Outer glow
-    Color glowColor = m_color;
-    glowColor.a = 100;
+    // Outer glow/bubble (keep this)
+    Color glowColor(255, 255, 255, 100);
     renderer->SetDrawColor(glowColor);
     renderer->DrawCircle(drawPos, m_radius + 5, glowColor);
 
-    // Main orb
-    renderer->SetDrawColor(m_color);
-    renderer->DrawCircle(drawPos, m_radius, m_color);
-
-    // Inner highlight
-    Color highlightColor = Color(255, 255, 255, 128);
-    renderer->SetDrawColor(highlightColor);
-    renderer->DrawCircle(drawPos + Vector2(-3, -3), m_radius * 0.3f, highlightColor);
-
-    // Skill type indicator
-    Vector2 textPos = drawPos + Vector2(0, m_radius + 15);
-    renderer->DrawText(textPos, GetSkillName().c_str(), Color(255, 255, 255, 255));
+    // Draw texture if loaded (50x50 texture scaled to 30x30 to match radius 15)
+    if (m_texture) {
+        Vector2 cameraOffset = renderer->GetCameraOffset();
+        float textureSize = m_radius * 2.0f; // 30x30 (diameter = 2 * radius)
+        SDL_FRect destRect = {
+            drawPos.x - textureSize / 2.0f - cameraOffset.x,
+            drawPos.y - textureSize / 2.0f - cameraOffset.y,
+            textureSize,
+            textureSize
+        };
+        SDL_RenderTexture(renderer->GetSDLRenderer(), m_texture, nullptr, &destRect);
+    }
 }
 
 void SkillOrb::OnCollected(Player* player) {
@@ -56,37 +84,20 @@ void SkillOrb::UpdateAnimation(float deltaTime) {
     m_bobOffset = std::sin(m_bobSpeed * m_animTime) * BOB_AMPLITUDE;
 }
 
-Color SkillOrb::GetSkillColor() const {
+std::string SkillOrb::GetTexturePath() const {
     switch (m_skillType) {
     case SkillType::SPLIT_THROW:
-        return Color(255, 165, 0, 255); // Orange
+        return "../assets/skill_orbs/orb_split.png";
     case SkillType::ENHANCED_DAMAGE:
-        return Color(255, 0, 0, 255); // Red
+        return "../assets/skill_orbs/orb_damage.png";
     case SkillType::ENHANCED_EXPLOSIVE:
-        return Color(255, 0, 255, 255); // Magenta
+        return "../assets/skill_orbs/orb_explosive.png";
     case SkillType::TELEPORT:
-        return Color(0, 255, 255, 255); // Cyan
+        return "../assets/skill_orbs/orb_teleport.png";
     case SkillType::HEAL:
-        return Color(0, 255, 0, 255); // Green
+        return "../assets/skill_orbs/orb_heal.png";
     default:
-        return Color(255, 255, 255, 255); // White
-    }
-}
-
-std::string SkillOrb::GetSkillName() const {
-    switch (m_skillType) {
-    case SkillType::SPLIT_THROW:
-        return "Split";
-    case SkillType::ENHANCED_DAMAGE:
-        return "Damage+";
-    case SkillType::ENHANCED_EXPLOSIVE:
-        return "Explosive+";
-    case SkillType::TELEPORT:
-        return "Teleport";
-    case SkillType::HEAL:
-        return "Heal";
-    default:
-        return "Unknown";
+        return "";
     }
 }
 

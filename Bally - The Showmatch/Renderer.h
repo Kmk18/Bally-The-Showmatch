@@ -36,7 +36,6 @@ public:
 
     // Game specific
     void DrawPlatform(const Vector2& position, float width, float height);
-    void DrawProjectileTrajectory(const Vector2& start, const Vector2& velocity, float gravity, int steps);
 
     void SetDrawColor(const Color& color);
     void Clear(const Color& color = Color(50, 50, 50, 255));

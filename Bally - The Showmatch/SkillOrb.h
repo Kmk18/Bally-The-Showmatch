@@ -2,6 +2,8 @@
 
 #include "Vector2.h"
 #include "UI.h"
+#include <SDL3/SDL.h>
+#include <SDL3_image/SDL_image.h>
 
 class Player;
 class Renderer;
@@ -9,6 +11,7 @@ class Renderer;
 class SkillOrb {
 public:
     SkillOrb(const Vector2& position, SkillType skillType, int spawnTurn);
+    ~SkillOrb();
 
     void Update(float deltaTime);
     void Draw(Renderer* renderer) const;
@@ -23,6 +26,9 @@ public:
 
     void SetPosition(const Vector2& position) { m_position = position; }
     void SetCollected(bool collected) { m_collected = collected; }
+
+    // Texture loading
+    bool LoadTexture(Renderer* renderer);
 
     // Skill effects
     static void ApplySplitThrowSkill(Player* player);
@@ -39,12 +45,11 @@ private:
     float m_animTime; // Animation timer
     float m_bobOffset;
     float m_bobSpeed;
-    Color m_color;
+    SDL_Texture* m_texture; // Texture for the skill orb
 
     // Animation
     void UpdateAnimation(float deltaTime);
-    Color GetSkillColor() const;
-    std::string GetSkillName() const;
+    std::string GetTexturePath() const;
 
     // Constants
     static constexpr float DEFAULT_RADIUS = 15.0f;

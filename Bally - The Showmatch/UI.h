@@ -63,6 +63,9 @@ private:
     int m_inventorySlotWidth;
     int m_inventorySlotHeight;
 
+    // Skill orb textures (for inventory)
+    SDL_Texture* m_skillOrbTextures[static_cast<int>(SkillType::COUNT)];
+
     // Message system
     struct Message {
         std::string text;
@@ -72,11 +75,11 @@ private:
     std::vector<Message> m_messages;
 
     // UI Elements
-    void DrawHUD(const std::vector<std::unique_ptr<Player>>& players);
-    void DrawPlayerInfo(const Player& player, int index, const Vector2& position);
+    void DrawPlayerHealthBar(const Player& player, int index);
     void DrawTurnTimer(float timer);
     void DrawCurrentPlayerIndicator(int playerIndex);
     void DrawAimingUI(const Player& player, const Vector2& mousePosition);
+    void DrawControlsHelp();
     void DrawPowerIndicator(const Vector2& position, float power, float maxPower);
     void DrawPowerBarRuler(const Player& player);
     void DrawAngleIndicator(const Vector2& position, float angle, float length);
@@ -92,6 +95,8 @@ private:
 
     // Texture loading
     void LoadInventorySlotTexture();
+    void LoadSkillOrbTextures();
+    std::string GetSkillOrbTexturePath(SkillType skillType) const;
 
     // Constants
     static constexpr float MESSAGE_DURATION = 3.0f;

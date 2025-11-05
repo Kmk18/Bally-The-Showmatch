@@ -22,7 +22,12 @@ constexpr const T& clamp(const T& v, const T& lo, const T& hi) {
 
 UI::UI(Renderer* renderer) : m_renderer(renderer), m_turnTimer(20.0f), m_currentPlayerIndex(0),
     m_inventorySlotTexture(nullptr), m_selectedInventorySlotTexture(nullptr), m_inventorySlotWidth(0), m_inventorySlotHeight(0) {
+    // Initialize skill orb textures to nullptr
+    for (int i = 0; i < static_cast<int>(SkillType::COUNT); ++i) {
+        m_skillOrbTextures[i] = nullptr;
+    }
     LoadInventorySlotTexture();
+    LoadSkillOrbTextures();
 }
 
 UI::~UI() {
@@ -33,6 +38,13 @@ UI::~UI() {
     if (m_selectedInventorySlotTexture) {
         SDL_DestroyTexture(m_selectedInventorySlotTexture);
         m_selectedInventorySlotTexture = nullptr;
+    }
+    // Clean up skill orb textures
+    for (int i = 0; i < static_cast<int>(SkillType::COUNT); ++i) {
+        if (m_skillOrbTextures[i]) {
+            SDL_DestroyTexture(m_skillOrbTextures[i]);
+            m_skillOrbTextures[i] = nullptr;
+        }
     }
 }
 
@@ -55,7 +67,6 @@ void UI::Render(const std::vector<std::unique_ptr<Player>>& players,
     m_currentPlayerIndex = currentPlayerIndex;
     m_turnTimer = turnTimer;
 
-    DrawHUD(players);
     DrawTurnTimer(turnTimer);
     DrawCurrentPlayerIndicator(currentPlayerIndex);
 
@@ -72,6 +83,13 @@ void UI::Render(const std::vector<std::unique_ptr<Player>>& players,
 
 void UI::RenderWorldSpace(const std::vector<std::unique_ptr<Player>>& players,
     int currentPlayerIndex, const Vector2& mousePosition) {
+    // Draw health bars and player names above players (world-space)
+    for (size_t i = 0; i < players.size(); ++i) {
+        if (players[i]->IsAlive()) {
+            DrawPlayerHealthBar(*players[i], static_cast<int>(i));
+        }
+    }
+
     // Draw aiming UI for current player (world-space: angle, power, trajectory)
     if (currentPlayerIndex < players.size() && players[currentPlayerIndex]->IsAlive()) {
         const Player& currentPlayer = *players[currentPlayerIndex];
@@ -87,8 +105,7 @@ void UI::RenderScreenSpace(const std::vector<std::unique_ptr<Player>>& players,
     m_currentPlayerIndex = currentPlayerIndex;
     m_turnTimer = turnTimer;
 
-    // Draw HUD elements (screen-space)
-    DrawHUD(players);
+    DrawControlsHelp();
     DrawTurnTimer(turnTimer);
     DrawCurrentPlayerIndicator(currentPlayerIndex);
     DrawMessages();
@@ -108,58 +125,35 @@ void UI::RenderScreenSpace(const std::vector<std::unique_ptr<Player>>& players,
     }
 }
 
-void UI::DrawHUD(const std::vector<std::unique_ptr<Player>>& players) {
-    // Draw player info panels
-    Vector2 startPos(10, 10);
-    float panelWidth = 200;
-    float panelHeight = 80;
-    float spacing = 10;
+void UI::DrawPlayerHealthBar(const Player& player, int index) {
+    Vector2 playerPos = player.GetPosition();
+    const float healthBarWidth = 50.0f;
+    const float healthBarHeight = 6.0f;
+    const float healthBarOffset = 40.0f;
+    const float nameOffset = 60.0f;
 
-    for (size_t i = 0; i < players.size(); ++i) {
-        Vector2 panelPos = startPos + Vector2(0, i * (panelHeight + spacing));
-        DrawPlayerInfo(*players[i], static_cast<int>(i), panelPos);
-    }
-}
-
-void UI::DrawPlayerInfo(const Player& player, int index, const Vector2& position) {
-    // Panel background
-    Color panelColor = player.GetColor();
-    panelColor.a = 128; // Semi-transparent
-    m_renderer->DrawRect(position, 200, 80, panelColor);
-
-    // Panel outline
-    m_renderer->DrawRect(position, 200, 80, Color(255, 255, 255, 255), false);
-
-    // Player name
+    // Get player name and text size
     std::string playerName = "Player " + std::to_string(index + 1);
-    m_renderer->DrawText(position + Vector2(5, 5), playerName.c_str(), Color(255, 255, 255, 255));
+    int textWidth = 0, textHeight = 0;
+    m_renderer->GetTextSize(playerName.c_str(), &textWidth, &textHeight);
+    
+    // Player name position (manual offset from player)
+    float nameX = playerPos.x - textWidth / 2.0f;
+    float nameY = playerPos.y - nameOffset;
+    Vector2 namePos(nameX, nameY);
+    
+    // Health bar position (centered above player)
+    Vector2 healthBarPos = playerPos + Vector2(-healthBarWidth / 2.0f, -healthBarOffset);
+    
+    m_renderer->DrawText(namePos, playerName.c_str(), Color(255, 255, 255, 255));
 
-    // Health bar
-    Vector2 healthBarPos = position + Vector2(5, 25);
     m_renderer->DrawHealthBar(healthBarPos, player.GetHealth(), player.GetMaxHealth(),
-        HEALTH_BAR_WIDTH, HEALTH_BAR_HEIGHT);
-
-    // Status text
-    std::string status;
-    if (!player.IsAlive()) {
-        status = "DEAD";
-    }
-    else if (index == m_currentPlayerIndex) {
-        status = "TURN";
-    }
-    else {
-        status = "WAITING";
-    }
-
-    m_renderer->DrawText(position + Vector2(5, 45), status.c_str(), Color(255, 255, 255, 255));
-
-    // Skills
-    DrawPlayerSkills(player, position + Vector2(5, 60));
+        healthBarWidth, healthBarHeight);
 }
 
 void UI::DrawTurnTimer(float timer) {
     Vector2 timerPos(500, 10);
-    float normalizedTimer = timer / 20.0f; // Assuming 20 second turns
+    float normalizedTimer = timer / 20.0f;
 
     // Timer background
     m_renderer->DrawRect(timerPos, TURN_TIMER_WIDTH, TURN_TIMER_HEIGHT, Color(50, 50, 50, 255));
@@ -206,18 +200,15 @@ void UI::DrawAimingUI(const Player& player, const Vector2& mousePosition) {
     // Draw angle indicator using actual velocity direction
     float displayAngle = std::atan2(velocity.y, velocity.x) * 180.0f / M_PI;
     DrawAngleIndicator(playerPos, displayAngle, ANGLE_INDICATOR_LENGTH);
+}
 
-    // Draw trajectory preview using the same velocity (matching Game.cpp projectile speed)
-    m_renderer->DrawProjectileTrajectory(playerPos, velocity * (powerRatio * 1800.0f), 980.0f, 60);
-
-    // Draw controls help
-    Vector2 helpPos(10, 400);
+void UI::DrawControlsHelp() {
+    Vector2 helpPos(10, 10);
     m_renderer->DrawText(helpPos, "Controls:", Color(255, 255, 255, 255));
     m_renderer->DrawText(helpPos + Vector2(0, 15), "Left/Right: Move", Color(255, 255, 255, 255));
     m_renderer->DrawText(helpPos + Vector2(0, 30), "Up/Down: Aim", Color(255, 255, 255, 255));
     m_renderer->DrawText(helpPos + Vector2(0, 45), "Space: Power (Hold)", Color(255, 255, 255, 255));
-    m_renderer->DrawText(helpPos + Vector2(0, 60), "Enter: Throw", Color(255, 255, 255, 255));
-    m_renderer->DrawText(helpPos + Vector2(0, 75), "1/2/3/4: Select Skills", Color(255, 255, 255, 255));
+    m_renderer->DrawText(helpPos + Vector2(0, 60), "1/2/3/4: Select Skills", Color(255, 255, 255, 255));
 }
 
 void UI::DrawInventory(const Player& player, const Vector2& position) {
@@ -267,18 +258,21 @@ void UI::DrawInventory(const Player& player, const Vector2& position) {
         Vector2 textPos = slotPos + Vector2(offset, 53.0f - textHeight - offset);
         m_renderer->DrawText(textPos, keyText.c_str(), Color(255, 255, 255, 255));
 
-        // Draw skill icon if slot is occupied
+        // Draw skill orb texture if slot is occupied (centered in slot)
         if (i < inventory.size()) {
             int skillType = inventory[i];
-            Color skillColor = GetSkillColor(static_cast<SkillType>(skillType));
-
-            // Draw skill circle
-            Vector2 skillCenter = slotPos + Vector2(25, 30);
-            m_renderer->DrawCircle(skillCenter, 12, skillColor);
-
-            // Draw skill name
-            std::string skillName = GetSkillName(static_cast<SkillType>(skillType));
-            m_renderer->DrawText(slotPos + Vector2(5, 40), skillName.substr(0, 4).c_str(), Color(255, 255, 255, 255));
+            SDL_Texture* skillTexture = m_skillOrbTextures[skillType];
+            
+            if (skillTexture) {
+                // Center the texture in the 50x50 slot
+                const float slotSize = 50.0f;
+                const float textureSize = 50.0f; // Texture is 50x50, use full size or scale as needed
+                float centerX = slotPos.x + slotSize / 2.0f - textureSize / 2.0f;
+                float centerY = slotPos.y + slotSize / 2.0f - textureSize / 2.0f;
+                
+                SDL_FRect destRect = { centerX, centerY, textureSize, textureSize };
+                SDL_RenderTexture(m_renderer->GetSDLRenderer(), skillTexture, nullptr, &destRect);
+            }
         }
     }
 }
@@ -370,13 +364,6 @@ void UI::DrawAngleIndicator(const Vector2& position, float angle, float length) 
 
     // Draw angle indicator line
     m_renderer->DrawLine(position, end, Color(255, 255, 255, 255), 3.0f);
-
-    // Draw angle arc
-    for (float a = -M_PI / 4; a <= M_PI / 4; a += 0.1f) {
-        Vector2 arcStart = position + Vector2(std::cos(a), std::sin(a)) * (length * 0.5f);
-        Vector2 arcEnd = position + Vector2(std::cos(a + 0.1f), std::sin(a + 0.1f)) * (length * 0.5f);
-        m_renderer->DrawLine(arcStart, arcEnd, Color(255, 255, 255, 128), 1.0f);
-    }
 }
 
 void UI::DrawMessages() {
@@ -584,5 +571,48 @@ void UI::LoadInventorySlotTexture() {
         } else {
             std::cout << "Selected inventory slot texture loaded successfully" << std::endl;
         }
+    }
+}
+
+void UI::LoadSkillOrbTextures() {
+    for (int i = 0; i < static_cast<int>(SkillType::COUNT); ++i) {
+        SkillType skillType = static_cast<SkillType>(i);
+        std::string texturePath = GetSkillOrbTexturePath(skillType);
+        
+        if (texturePath.empty()) {
+            continue;
+        }
+        
+        SDL_Surface* surface = IMG_Load(texturePath.c_str());
+        if (!surface) {
+            std::cerr << "Failed to load skill orb texture: " << texturePath << " - " << SDL_GetError() << std::endl;
+            continue;
+        }
+        
+        m_skillOrbTextures[i] = SDL_CreateTextureFromSurface(m_renderer->GetSDLRenderer(), surface);
+        SDL_DestroySurface(surface);
+        
+        if (!m_skillOrbTextures[i]) {
+            std::cerr << "Failed to create skill orb texture: " << texturePath << " - " << SDL_GetError() << std::endl;
+        } else {
+            std::cout << "Loaded skill orb texture: " << texturePath << std::endl;
+        }
+    }
+}
+
+std::string UI::GetSkillOrbTexturePath(SkillType skillType) const {
+    switch (skillType) {
+    case SkillType::SPLIT_THROW:
+        return "../assets/skill_orbs/orb_split.png";
+    case SkillType::ENHANCED_DAMAGE:
+        return "../assets/skill_orbs/orb_damage.png";
+    case SkillType::ENHANCED_EXPLOSIVE:
+        return "../assets/skill_orbs/orb_explosive.png";
+    case SkillType::TELEPORT:
+        return "../assets/skill_orbs/orb_teleport.png";
+    case SkillType::HEAL:
+        return "../assets/skill_orbs/orb_heal.png";
+    default:
+        return "";
     }
 }

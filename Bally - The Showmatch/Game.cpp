@@ -649,7 +649,9 @@ void Game::SpawnSkillOrbs() {
         }
         
         SkillType skillType = static_cast<SkillType>(skillDist(gen));
-        m_skillOrbs.push_back(std::make_unique<SkillOrb>(position, skillType, m_turnCounter));
+        auto orb = std::make_unique<SkillOrb>(position, skillType, m_turnCounter);
+        orb->LoadTexture(m_renderer.get());
+        m_skillOrbs.push_back(std::move(orb));
     }
 
     m_ui->ShowMessage("Skill orbs spawned!");
@@ -842,11 +844,6 @@ void Game::Render() {
                 }
             }
 
-            // Draw health bar only for alive players
-            if (player->IsAlive()) {
-                Vector2 healthBarPos = player->GetPosition() + Vector2(0, -40);
-                m_renderer->DrawHealthBar(healthBarPos, player->GetHealth(), player->GetMaxHealth(), 40, 8);
-            }
         }
 
         // Draw world-space UI elements (angle/power indicators, trajectory)

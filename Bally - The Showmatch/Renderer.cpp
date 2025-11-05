@@ -210,21 +210,6 @@ void Renderer::DrawPowerIndicator(const Vector2& position, float power, float ma
     DrawRect(position, 100, 10, Color(255, 255, 255, 255), false);
 }
 
-void Renderer::DrawAngleIndicator(const Vector2& position, float angle, float length) {
-    float radians = angle * M_PI / 180.0f;
-    Vector2 end = position + Vector2(std::cos(radians), std::sin(radians)) * length;
-
-    // Draw angle indicator line
-    DrawLine(position, end, Color(255, 255, 255, 255), 3.0f);
-
-    // Draw angle arc
-    for (float a = -M_PI / 4; a <= M_PI / 4; a += 0.1f) {
-        Vector2 arcStart = position + Vector2(std::cos(a), std::sin(a)) * (length * 0.5f);
-        Vector2 arcEnd = position + Vector2(std::cos(a + 0.1f), std::sin(a + 0.1f)) * (length * 0.5f);
-        DrawLine(arcStart, arcEnd, Color(255, 255, 255, 128), 1.0f);
-    }
-}
-
 void Renderer::DrawHealthBar(const Vector2& position, float health, float maxHealth, float width, float height) {
     float normalizedHealth = clamp(health / maxHealth, 0.0f, 1.0f);
 
@@ -269,7 +254,9 @@ void Renderer::DrawText(const Vector2& position, const char* text, const Color& 
         return;
     }
 
-    SDL_FRect dst{ position.x, position.y, static_cast<float>(surface->w), static_cast<float>(surface->h) };
+    // Apply camera offset
+    SDL_FRect dst{ position.x - m_cameraOffset.x, position.y - m_cameraOffset.y, 
+                   static_cast<float>(surface->w), static_cast<float>(surface->h) };
     SDL_RenderTexture(m_renderer, texture, nullptr, &dst);
 
     SDL_DestroyTexture(texture);
@@ -330,28 +317,4 @@ void Renderer::DrawPlatform(const Vector2& position, float width, float height) 
 
     // Platform shadow
     DrawRect(Vector2(position.x + 5, position.y + height), width, height * 0.1f, Color(0, 0, 0, 100));
-}
-
-void Renderer::DrawProjectileTrajectory(const Vector2& start, const Vector2& velocity, float gravity, int steps) {
-    Vector2 pos = start;
-    Vector2 vel = velocity;
-    const float AIR_RESISTANCE = 0.98f; // Match projectile air resistance
-
-    for (int i = 0; i < steps; ++i) {
-        // Apply gravity
-        vel.y += gravity * (1.0f / 60.0f);
-        // Apply air resistance (same as projectile)
-        vel = vel * AIR_RESISTANCE;
-        // Update position
-        Vector2 nextPos = pos + vel * (1.0f / 60.0f);
-
-        if (i % 3 == 0) { // Draw every 3rd point
-            DrawCircle(nextPos, 2.0f, Color(255, 255, 255, 100));
-        }
-
-        pos = nextPos;
-
-        // Stop if trajectory goes too far off screen
-        if (pos.x < -100 || pos.x > m_windowWidth + 100 || pos.y > m_windowHeight + 100) break;
-    }
 }
