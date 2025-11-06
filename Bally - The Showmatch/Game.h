@@ -78,6 +78,10 @@ private:
     bool m_cameraDelayActive;
     static constexpr float CAMERA_DELAY_AFTER_IMPACT = 0.5f; // 0.5 seconds delay
 
+    // Mouse drag for camera
+    Vector2 m_lastDragMousePos;
+    bool m_isDraggingCamera;
+
     // Game constants
     static constexpr int MAX_PLAYERS = 4;
     static constexpr int MIN_PLAYERS = 2;

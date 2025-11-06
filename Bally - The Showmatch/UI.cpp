@@ -627,6 +627,8 @@ void UI::ShowMessage(const std::string& message, float duration) {
 
 void UI::ShowGameOver(int winnerId, GameMode gameMode) {
     // Only activate if there's a valid winner
+    // Valid IDs: -2 (Team 2), -1 (Team 1), 0-3 (Players 1-4)
+    // Use -999 or any value < -2 to clear/deactivate
     if (winnerId >= -2 && winnerId < 4) {
         m_gameOverActive = true;
         m_winnerId = winnerId;
@@ -635,6 +637,7 @@ void UI::ShowGameOver(int winnerId, GameMode gameMode) {
         m_currentColorIndex = 0;
     } else {
         m_gameOverActive = false;
+        m_winnerId = -1; // Reset to default
     }
 }
 
@@ -685,30 +688,39 @@ void UI::DrawMinimap(const Vector2& cameraPos, float mapWidth, float mapHeight,
         Color(255, 255, 0, 150), false);
 }
 
+bool UI::IsMouseOverMinimap(const Vector2& mousePos) const {
+    // Minimap position (bottom-right corner)
+    Vector2 minimapPos(1200 - MINIMAP_WIDTH - 10, 800 - MINIMAP_HEIGHT - 10);
+    
+    // Check if mouse is within minimap bounds
+    return (mousePos.x >= minimapPos.x && mousePos.x <= minimapPos.x + MINIMAP_WIDTH &&
+            mousePos.y >= minimapPos.y && mousePos.y <= minimapPos.y + MINIMAP_HEIGHT);
+}
+
 bool UI::HandleMinimapClick(const Vector2& mousePos, float mapWidth, float mapHeight, Vector2& outWorldPos) {
     // Minimap position (bottom-right corner)
     Vector2 minimapPos(1200 - MINIMAP_WIDTH - 10, 800 - MINIMAP_HEIGHT - 10);
 
-    // Check if mouse is within minimap bounds
-    if (mousePos.x >= minimapPos.x && mousePos.x <= minimapPos.x + MINIMAP_WIDTH &&
-        mousePos.y >= minimapPos.y && mousePos.y <= minimapPos.y + MINIMAP_HEIGHT) {
+    // Calculate scale factors
+    float scaleX = MINIMAP_WIDTH / mapWidth;
+    float scaleY = MINIMAP_HEIGHT / mapHeight;
 
-        // Calculate scale factors
-        float scaleX = MINIMAP_WIDTH / mapWidth;
-        float scaleY = MINIMAP_HEIGHT / mapHeight;
+    // Clamp mouse position to minimap bounds (for dragging outside minimap)
+    float clampedX = std::max(minimapPos.x, std::min(mousePos.x, minimapPos.x + MINIMAP_WIDTH));
+    float clampedY = std::max(minimapPos.y, std::min(mousePos.y, minimapPos.y + MINIMAP_HEIGHT));
 
-        // Convert minimap position to world position (centered on viewport)
-        float clickX = (mousePos.x - minimapPos.x) / scaleX;
-        float clickY = (mousePos.y - minimapPos.y) / scaleY;
+    // Convert minimap position to world position (centered on viewport)
+    float clickX = (clampedX - minimapPos.x) / scaleX;
+    float clickY = (clampedY - minimapPos.y) / scaleY;
 
-        // Center the camera on the clicked position (subtract half viewport to get top-left position)
-        outWorldPos.x = clickX - 600.0f; // 1200 / 2
-        outWorldPos.y = clickY - 400.0f; // 800 / 2
+    // Center the camera on the clicked position (subtract half viewport to get top-left position)
+    outWorldPos.x = clickX - 600.0f; // 1200 / 2
+    outWorldPos.y = clickY - 400.0f; // 800 / 2
 
-        return true;
-    }
-
-    return false;
+    // Return true if mouse is within minimap bounds (for click detection)
+    // But always calculate world position (for dragging outside bounds)
+    return (mousePos.x >= minimapPos.x && mousePos.x <= minimapPos.x + MINIMAP_WIDTH &&
+            mousePos.y >= minimapPos.y && mousePos.y <= minimapPos.y + MINIMAP_HEIGHT);
 }
 
 void UI::LoadInventorySlotTexture() {

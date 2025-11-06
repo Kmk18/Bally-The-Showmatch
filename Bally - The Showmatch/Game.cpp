@@ -10,7 +10,7 @@ Game::Game() : m_window(nullptr), m_running(false), m_lastFrameTime(0.0f),
 m_gameState(GameState::MAIN_MENU), m_gameMode(GameMode::FREE_FOR_ALL), m_numPlayers(4),
 m_currentPlayerIndex(0), m_turnTimer(TURN_DURATION), m_turnCounter(0),
 m_gameStarted(false), m_gameEnded(false), m_winnerId(-1), m_waitingForProjectiles(false),
-m_cameraDelayTimer(0.0f), m_cameraDelayActive(false) {
+m_cameraDelayTimer(0.0f), m_cameraDelayActive(false), m_lastDragMousePos(0, 0), m_isDraggingCamera(false) {
 }
 
 Game::~Game() {
@@ -268,23 +268,60 @@ void Game::Update(float deltaTime) {
             int buttonClick = m_ui->GetGameOverButtonClick(mousePos);
             if (buttonClick == 1) {
                 // Back to menu
+                m_ui->ShowGameOver(-999, m_gameMode); // Clear game over screen (invalid ID)
                 ReturnToMenu();
                 m_gameEnded = false;
+                m_isDraggingCamera = false;
             } else if (buttonClick == 2) {
-                // Rematch
+                // Rematch - reset game and restart on same map
+                m_ui->ShowGameOver(-999, m_gameMode); // Clear game over screen (invalid ID)
                 ResetGame();
-                StartGame();
+                // Don't call StartGame() - it would reload the map
+                // Instead, just start the game with current map
+                m_currentPlayerIndex = 0;
+                m_turnTimer = TURN_DURATION;
+                m_turnCounter = 0;
+                m_gameStarted = false;
+                m_gameEnded = false;
+                m_winnerId = -1;
+                m_waitingForProjectiles = false;
+                m_cameraDelayActive = false;
+                m_cameraDelayTimer = 0.0f;
+                
+                // Snap camera to first player
+                if (!m_players.empty()) {
+                    m_camera->SetTarget(m_players[0]->GetPosition());
+                    m_camera->SnapToTarget();
+                }
+                
+                // Start first player's turn
+                if (!m_players.empty()) {
+                    m_players[0]->StartTurn();
+                }
+                
+                m_ui->ClearMessages();
+                m_ui->ShowMessage("Player 1's turn");
+                m_isDraggingCamera = false;
             } else {
-                // Check for minimap click
-                Vector2 worldPos;
-                if (m_currentMap && m_ui->HandleMinimapClick(mousePos, m_currentMap->GetWidth(), m_currentMap->GetHeight(), worldPos)) {
-                    m_camera->SetManualControl(true);
-                    m_camera->SetCameraPosition(worldPos);
+                // Check if clicking on minimap
+                if (m_currentMap && m_ui->IsMouseOverMinimap(mousePos)) {
+                    // Start minimap drag
+                    m_isDraggingCamera = true;
+                    m_lastDragMousePos = mousePos;
+                    // Convert initial click to world position and set camera
+                    Vector2 worldPos;
+                    if (m_ui->HandleMinimapClick(mousePos, m_currentMap->GetWidth(), m_currentMap->GetHeight(), worldPos)) {
+                        m_camera->SetManualControl(true);
+                        m_camera->SetCameraPosition(worldPos);
+                    }
+                } else {
+                    // Not clicking on UI - don't start drag (only minimap drag is supported)
+                    m_isDraggingCamera = false;
                 }
             }
         }
 
-        // Check for manual camera controls (WASD)
+        // Check for manual camera controls (WASD and mouse drag)
         Vector2 cameraMovement(0, 0);
         bool manualCameraInput = false;
 
@@ -305,14 +342,34 @@ void Game::Update(float deltaTime) {
             manualCameraInput = true;
         }
 
-        // Enable/disable manual control based on input
-        if (manualCameraInput) {
-            m_camera->SetManualControl(true);
-            if (cameraMovement.Length() > 0) {
-                m_camera->MoveCamera(cameraMovement.Normalized(), deltaTime);
+        // Handle mouse drag for camera on minimap
+        if (m_isDraggingCamera && m_inputManager->IsMouseButtonPressed(0)) {
+            // Continue dragging even if mouse is outside minimap bounds
+            if (m_currentMap) {
+                // Convert current mouse position to world position (clamps to minimap bounds if outside)
+                Vector2 worldPos;
+                m_ui->HandleMinimapClick(mousePos, m_currentMap->GetWidth(), m_currentMap->GetHeight(), worldPos);
+                // Set camera to follow the mouse position on minimap (or clamped position if outside)
+                m_camera->SetManualControl(true);
+                m_camera->SetCameraPosition(worldPos);
+                m_lastDragMousePos = mousePos;
+                manualCameraInput = true;
             }
         } else if (!m_inputManager->IsMouseButtonPressed(0)) {
-            // Only disable manual control if not holding mouse button
+            // Mouse button released - stop dragging
+            m_isDraggingCamera = false;
+        }
+
+        // Enable/disable manual control based on input
+        if (manualCameraInput || m_isDraggingCamera) {
+            m_camera->SetManualControl(true);
+            if (cameraMovement.Length() > 0 && !m_isDraggingCamera) {
+                m_camera->MoveCamera(cameraMovement.Normalized(), deltaTime);
+            }
+        } else if (!m_inputManager->IsMouseButtonPressed(0) && 
+                   !m_inputManager->IsMouseButtonPressed(1) && 
+                   !m_inputManager->IsMouseButtonPressed(2)) {
+            // Only disable manual control if not holding any mouse button
             m_camera->SetManualControl(false);
         }
 
@@ -740,7 +797,7 @@ void Game::ResetGame() {
     m_waitingForProjectiles = false;
     m_cameraDelayActive = false;
     m_cameraDelayTimer = 0.0f;
-    m_ui->ShowGameOver(-1, m_gameMode); // Reset game over screen (will deactivate if winnerId is invalid)
+    m_ui->ShowGameOver(-999, m_gameMode); // Reset game over screen (invalid ID to deactivate)
 
     // Get actual map dimensions for respawning
     float mapWidth = m_currentMap ? static_cast<float>(m_currentMap->GetWidth()) : 1200.0f;
@@ -923,6 +980,9 @@ void Game::Render() {
 }
 
 void Game::StartGame() {
+    // Clear game over screen when starting new game
+    m_ui->ShowGameOver(-999, m_gameMode); // Invalid ID to clear screen
+    
     // Get game configuration from menu
     m_gameMode = m_menu->GetGameMode();
     m_numPlayers = m_menu->GetPlayerCount();
@@ -980,6 +1040,8 @@ void Game::StartGame() {
 }
 
 void Game::ReturnToMenu() {
+    // Clear game over screen when returning to menu
+    m_ui->ShowGameOver(-999, m_gameMode); // Invalid ID to clear screen
     m_gameState = GameState::MAIN_MENU;
     m_menu->SetState(GameState::MAIN_MENU);
 }

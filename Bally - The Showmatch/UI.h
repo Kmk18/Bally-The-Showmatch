@@ -45,6 +45,8 @@ public:
 
     // Check if mouse is clicking on minimap and return world position if so
     bool HandleMinimapClick(const Vector2& mousePos, float mapWidth, float mapHeight, Vector2& outWorldPos);
+    // Check if mouse is over minimap (for dragging)
+    bool IsMouseOverMinimap(const Vector2& mousePos) const;
 
     void ShowMessage(const std::string& message, float duration = 3.0f);
     void ShowGameOver(int winnerId, GameMode gameMode);
