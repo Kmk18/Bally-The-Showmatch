@@ -37,6 +37,7 @@ public:
     bool IsFacingRight() const { return m_facingRight; }
     CharacterAnimation* GetAnimation() { return m_animation.get(); }
     bool ShouldBeRemoved() const; // Returns true if dead and death animation finished
+    int GetTeam() const { return m_team; }
 
     // Setters
     void SetPosition(const Vector2& position) { m_position = position; }
@@ -45,6 +46,7 @@ public:
     void SetAngle(float angle) { m_angle = angle; }
     void SetPower(float power) { m_power = power; }
     void SetFacingRight(bool facingRight) { m_facingRight = facingRight; }
+    void SetTeam(int team) { m_team = team; }
 
     // Physics
     void ApplyForce(const Vector2& force);
@@ -93,6 +95,9 @@ private:
     std::string m_characterName;
     float m_hurtAnimationTimer;
     float m_lastHealth;
+    
+    // Team (0 = no team, 1 = team 1, 2 = team 2)
+    int m_team;
 
     // Skills
     std::vector<int> m_availableSkills;

@@ -210,22 +210,28 @@ void Renderer::DrawPowerIndicator(const Vector2& position, float power, float ma
     DrawRect(position, 100, 10, Color(255, 255, 255, 255), false);
 }
 
-void Renderer::DrawHealthBar(const Vector2& position, float health, float maxHealth, float width, float height) {
+void Renderer::DrawHealthBar(const Vector2& position, float health, float maxHealth, float width, float height, const Color& teamHealthColor) {
     float normalizedHealth = clamp(health / maxHealth, 0.0f, 1.0f);
 
     // Background
     DrawRect(position, width, height, Color(100, 0, 0, 255));
 
-    // Health bar
+    // Health bar color
     Color healthColor;
-    if (normalizedHealth > 0.6f) {
-        healthColor = Color(0, 255, 0, 255); // Green
-    }
-    else if (normalizedHealth > 0.3f) {
-        healthColor = Color(255, 255, 0, 255); // Yellow
-    }
-    else {
-        healthColor = Color(255, 0, 0, 255); // Red
+    if (teamHealthColor.r != 255 || teamHealthColor.g != 255 || teamHealthColor.b != 255 || teamHealthColor.a != 255) {
+        // Use team color if provided (valid team color)
+        healthColor = teamHealthColor;
+    } else {
+        // Default: color based on health percentage
+        if (normalizedHealth > 0.6f) {
+            healthColor = Color(0, 255, 0, 255); // Green
+        }
+        else if (normalizedHealth > 0.3f) {
+            healthColor = Color(255, 255, 0, 255); // Yellow
+        }
+        else {
+            healthColor = Color(255, 0, 0, 255); // Red
+        }
     }
 
     DrawRect(position, width * normalizedHealth, height, healthColor);

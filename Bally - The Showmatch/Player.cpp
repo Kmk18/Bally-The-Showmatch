@@ -16,7 +16,8 @@ Player::Player(int id, const Vector2& position, const Color& color, const std::s
     m_color(color), m_facingRight(true), m_characterName(characterName),
     m_hurtAnimationTimer(0.0f), m_lastHealth(DEFAULT_HEALTH),
     m_leftPressed(false), m_rightPressed(false),
-    m_upPressed(false), m_downPressed(false), m_spacePressed(false), m_powerIncreasing(true) {
+    m_upPressed(false), m_downPressed(false), m_spacePressed(false), m_powerIncreasing(true),
+    m_team(0) {
 
     // Create character animation if character name is provided
     if (!m_characterName.empty()) {

@@ -28,7 +28,7 @@ public:
     // UI elements
     void DrawPowerIndicator(const Vector2& position, float power, float maxPower);
     void DrawAngleIndicator(const Vector2& position, float angle, float length);
-    void DrawHealthBar(const Vector2& position, float health, float maxHealth, float width, float height);
+    void DrawHealthBar(const Vector2& position, float health, float maxHealth, float width, float height, const Color& healthColor = Color(-1, -1, -1, -1));
     void DrawText(const Vector2& position, const char* text, const Color& color);
     void GetTextSize(const char* text, int* width, int* height) const;
 

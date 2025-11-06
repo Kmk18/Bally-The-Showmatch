@@ -128,6 +128,16 @@ void Game::CreatePlayers() {
 
         auto player = std::make_unique<Player>(i, position, playerColors[i], characterNames[i]);
 
+        // Assign teams for team mode
+        if (m_gameMode == GameMode::TEAM_2V2) {
+            // Player 1 & 3 = Team 1 (green), Player 2 & 4 = Team 2 (red)
+            if (i == 0 || i == 2) {
+                player->SetTeam(1); // Team 1
+            } else if (i == 1 || i == 3) {
+                player->SetTeam(2); // Team 2
+            }
+        }
+
         // Load character animations
         if (player->GetAnimation()) {
             player->GetAnimation()->LoadCharacter(m_renderer.get());
@@ -251,13 +261,26 @@ void Game::Update(float deltaTime) {
             orb->Update(deltaTime);
         }
 
-        // Check for minimap click (left mouse button)
+        // Check for minimap click or game over button click (left mouse button)
         Vector2 mousePos = m_inputManager->GetMousePosition();
-        if (m_inputManager->IsMouseButtonPressed(0)) { // Left mouse button
-            Vector2 worldPos;
-            if (m_ui->HandleMinimapClick(mousePos, m_currentMap->GetWidth(), m_currentMap->GetHeight(), worldPos)) {
-                m_camera->SetManualControl(true);
-                m_camera->SetCameraPosition(worldPos);
+        if (m_inputManager->IsMouseButtonJustPressed(0)) { // Left mouse button
+            // Check for game over button clicks first
+            int buttonClick = m_ui->GetGameOverButtonClick(mousePos);
+            if (buttonClick == 1) {
+                // Back to menu
+                ReturnToMenu();
+                m_gameEnded = false;
+            } else if (buttonClick == 2) {
+                // Rematch
+                ResetGame();
+                StartGame();
+            } else {
+                // Check for minimap click
+                Vector2 worldPos;
+                if (m_currentMap && m_ui->HandleMinimapClick(mousePos, m_currentMap->GetWidth(), m_currentMap->GetHeight(), worldPos)) {
+                    m_camera->SetManualControl(true);
+                    m_camera->SetCameraPosition(worldPos);
+                }
             }
         }
 
@@ -658,20 +681,52 @@ void Game::SpawnSkillOrbs() {
 }
 
 void Game::CheckWinConditions() {
-    int alivePlayers = 0;
-    int lastAlivePlayer = -1;
-
-    for (size_t i = 0; i < m_players.size(); ++i) {
-        if (m_players[i]->IsAlive()) {
-            alivePlayers++;
-            lastAlivePlayer = static_cast<int>(i);
+    if (m_gameMode == GameMode::TEAM_2V2) {
+        // Team mode: check if all players of one team are dead
+        bool team1Alive = false;
+        bool team2Alive = false;
+        
+        for (size_t i = 0; i < m_players.size(); ++i) {
+            if (m_players[i]->IsAlive()) {
+                int team = m_players[i]->GetTeam();
+                if (team == 1) {
+                    team1Alive = true;
+                } else if (team == 2) {
+                    team2Alive = true;
+                }
+            }
         }
-    }
+        
+        if (!m_gameEnded) {
+            if (!team1Alive && team2Alive) {
+                // Team 2 wins
+                m_gameEnded = true;
+                m_winnerId = -2; // -2 = Team 2
+                m_ui->ShowGameOver(m_winnerId, m_gameMode);
+            } else if (team1Alive && !team2Alive) {
+                // Team 1 wins
+                m_gameEnded = true;
+                m_winnerId = -1; // -1 = Team 1
+                m_ui->ShowGameOver(m_winnerId, m_gameMode);
+            }
+        }
+    } else {
+        // Free-for-all mode: last player standing wins
+        int alivePlayers = 0;
+        int lastAlivePlayer = -1;
 
-    if (alivePlayers <= 1 && !m_gameEnded) {
-        m_gameEnded = true;
-        m_winnerId = lastAlivePlayer;
-        m_ui->ShowGameOver(m_winnerId);
+        for (size_t i = 0; i < m_players.size(); ++i) {
+            if (m_players[i]->IsAlive()) {
+                alivePlayers++;
+                lastAlivePlayer = static_cast<int>(i);
+            }
+        }
+
+        if (alivePlayers <= 1 && !m_gameEnded) {
+            m_gameEnded = true;
+            m_winnerId = lastAlivePlayer;
+            m_ui->ShowGameOver(m_winnerId, m_gameMode);
+        }
     }
 }
 
@@ -685,6 +740,7 @@ void Game::ResetGame() {
     m_waitingForProjectiles = false;
     m_cameraDelayActive = false;
     m_cameraDelayTimer = 0.0f;
+    m_ui->ShowGameOver(-1, m_gameMode); // Reset game over screen (will deactivate if winnerId is invalid)
 
     // Get actual map dimensions for respawning
     float mapWidth = m_currentMap ? static_cast<float>(m_currentMap->GetWidth()) : 1200.0f;
@@ -893,6 +949,9 @@ void Game::StartGame() {
 
     // Configure camera for the map size
     m_camera->SetMapBounds(m_currentMap->GetWidth(), m_currentMap->GetHeight());
+
+    // Set game mode in UI
+    m_ui->SetGameMode(m_gameMode);
 
     // Create players based on selection
     CreatePlayers();

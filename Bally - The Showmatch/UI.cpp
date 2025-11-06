@@ -21,13 +21,22 @@ constexpr const T& clamp(const T& v, const T& lo, const T& hi) {
 }
 
 UI::UI(Renderer* renderer) : m_renderer(renderer), m_turnTimer(20.0f), m_currentPlayerIndex(0),
-    m_inventorySlotTexture(nullptr), m_selectedInventorySlotTexture(nullptr), m_inventorySlotWidth(0), m_inventorySlotHeight(0) {
+    m_inventorySlotTexture(nullptr), m_selectedInventorySlotTexture(nullptr), m_inventorySlotWidth(0), m_inventorySlotHeight(0),
+    m_gameMode(GameMode::FREE_FOR_ALL), m_gameOverActive(false), m_winnerId(-1),
+    m_colorCycleTime(0.0f), m_currentColorIndex(0) {
     // Initialize skill orb textures to nullptr
     for (int i = 0; i < static_cast<int>(SkillType::COUNT); ++i) {
         m_skillOrbTextures[i] = nullptr;
     }
+    // Initialize button textures to nullptr
+    for (int i = 0; i < 4; ++i) {
+        m_buttonTextures[i] = nullptr;
+        m_buttonTextureWidths[i] = 0;
+        m_buttonTextureHeights[i] = 0;
+    }
     LoadInventorySlotTexture();
     LoadSkillOrbTextures();
+    LoadButtonTextures();
 }
 
 UI::~UI() {
@@ -46,6 +55,13 @@ UI::~UI() {
             m_skillOrbTextures[i] = nullptr;
         }
     }
+    // Clean up button textures
+    for (int i = 0; i < 4; ++i) {
+        if (m_buttonTextures[i]) {
+            SDL_DestroyTexture(m_buttonTextures[i]);
+            m_buttonTextures[i] = nullptr;
+        }
+    }
 }
 
 void UI::Update(float deltaTime) {
@@ -57,6 +73,15 @@ void UI::Update(float deltaTime) {
         }
         else {
             ++it;
+        }
+    }
+    
+    // Update color cycling for game over screen
+    if (m_gameOverActive) {
+        m_colorCycleTime += deltaTime;
+        if (m_colorCycleTime >= 0.3f) { // Change color every 0.3 seconds
+            m_colorCycleTime = 0.0f;
+            m_currentColorIndex = (m_currentColorIndex + 1) % 4; // Cycle through 4 colors
         }
     }
 }
@@ -123,6 +148,11 @@ void UI::RenderScreenSpace(const std::vector<std::unique_ptr<Player>>& players,
     if (currentPlayerIndex < players.size() && players[currentPlayerIndex]->IsAlive()) {
         DrawPowerBarRuler(*players[currentPlayerIndex]);
     }
+    
+    // Draw game over screen if active
+    if (m_gameOverActive) {
+        DrawGameOverScreen(m_winnerId);
+    }
 }
 
 void UI::DrawPlayerHealthBar(const Player& player, int index) {
@@ -147,8 +177,22 @@ void UI::DrawPlayerHealthBar(const Player& player, int index) {
     
     m_renderer->DrawText(namePos, playerName.c_str(), Color(255, 255, 255, 255));
 
+    // Determine health bar color based on team mode
+    Color teamColor = Color(255, 255, 255, 255); // Default (invalid, will use percentage-based color)
+    if (m_gameMode == GameMode::TEAM_2V2) {
+        int team = player.GetTeam();
+        if (team == 1) {
+            teamColor = Color(0, 255, 0, 255); // Green for Team 1
+        } else if (team == 2) {
+            teamColor = Color(255, 0, 0, 255); // Red for Team 2
+        }
+    } else {
+        // Free-for-all: use default invalid color to trigger percentage-based coloring
+        teamColor = Color(255, 255, 255, 255);
+    }
+
     m_renderer->DrawHealthBar(healthBarPos, player.GetHealth(), player.GetMaxHealth(),
-        healthBarWidth, healthBarHeight);
+        healthBarWidth, healthBarHeight, teamColor);
 }
 
 void UI::DrawTurnTimer(float timer) {
@@ -376,19 +420,156 @@ void UI::DrawMessages() {
 }
 
 void UI::DrawGameOverScreen(int winnerId) {
+    if (!m_gameOverActive) return;
+    
     // Semi-transparent overlay
-    m_renderer->DrawRect(Vector2::Zero(), 1200, 800, Color(0, 0, 0, 128));
+    m_renderer->DrawRect(Vector2::Zero(), 1200, 800, Color(0, 0, 0, 200));
 
-    // Game over text
-    Vector2 centerPos(600, 300);
-    m_renderer->DrawText(centerPos + Vector2(-50, 0), "GAME OVER", Color(255, 0, 0, 255));
-
-    if (winnerId >= 0) {
-        std::string winnerText = "Player " + std::to_string(winnerId + 1) + " Wins!";
-        m_renderer->DrawText(centerPos + Vector2(-30, 30), winnerText.c_str(), Color(255, 255, 0, 255));
+    // Get player colors for cycling
+    std::vector<Color> playerColors = {
+        Color(255, 100, 100, 255), // Red (Player 1)
+        Color(100, 100, 255, 255), // Blue (Player 2)
+        Color(100, 255, 100, 255), // Green (Player 3)
+        Color(255, 255, 100, 255)  // Yellow (Player 4)
+    };
+    
+    // Determine winner text
+    std::string winnerText;
+    if (m_gameMode == GameMode::TEAM_2V2) {
+        if (winnerId == -1) {
+            winnerText = "TEAM 1 WINS!";
+        } else if (winnerId == -2) {
+            winnerText = "TEAM 2 WINS!";
+        }
+    } else {
+        if (winnerId >= 0 && winnerId < 4) {
+            winnerText = "PLAYER " + std::to_string(winnerId + 1) + " WINS!";
+        } else {
+            winnerText = "GAME OVER";
+        }
     }
+    
+    // Get current color for cycling
+    Color currentColor = playerColors[m_currentColorIndex];
+    
+    // Draw big, bold winner text (centered, with color cycling)
+    int textWidth = 0, textHeight = 0;
+    m_renderer->GetTextSize(winnerText.c_str(), &textWidth, &textHeight);
+    Vector2 winnerTextPos(600.0f - textWidth / 2.0f, 250.0f);
+    
+    // Draw text with current color (bold effect by drawing multiple times with slight offset)
+    for (int i = -1; i <= 1; ++i) {
+        for (int j = -1; j <= 1; ++j) {
+            if (i != 0 || j != 0) {
+                m_renderer->DrawText(winnerTextPos + Vector2(static_cast<float>(i), static_cast<float>(j)), 
+                                    winnerText.c_str(), Color(0, 0, 0, 200));
+            }
+        }
+    }
+    m_renderer->DrawText(winnerTextPos, winnerText.c_str(), currentColor);
+    
+    // Draw buttons (Back to Menu - pink, Rematch - aqua)
+    const float buttonWidth = 200.0f;
+    const float buttonHeight = 50.0f;
+    const float buttonSpacing = 30.0f;
+    const float buttonY = 400.0f;
+    const float totalButtonsWidth = buttonWidth * 2.0f + buttonSpacing;
+    const float buttonStartX = 600.0f - totalButtonsWidth / 2.0f;
+    
+    // Back to Menu button (pink - index 2)
+    Vector2 backButtonPos(buttonStartX, buttonY);
+    if (m_buttonTextures[2] && m_buttonTextureWidths[2] > 0 && m_buttonTextureHeights[2] > 0) {
+        // Calculate scale to maintain aspect ratio while fitting in button size
+        float scaleX = buttonWidth / static_cast<float>(m_buttonTextureWidths[2]);
+        float scaleY = buttonHeight / static_cast<float>(m_buttonTextureHeights[2]);
+        float scale = std::min(scaleX, scaleY);
+        
+        // Calculate centered destination rectangle maintaining aspect ratio
+        float scaledWidth = static_cast<float>(m_buttonTextureWidths[2]) * scale;
+        float scaledHeight = static_cast<float>(m_buttonTextureHeights[2]) * scale;
+        float offsetX = (buttonWidth - scaledWidth) * 0.5f;
+        float offsetY = (buttonHeight - scaledHeight) * 0.5f;
+        
+        SDL_FRect destRect = { 
+            backButtonPos.x + offsetX, 
+            backButtonPos.y + offsetY, 
+            scaledWidth, 
+            scaledHeight 
+        };
+        SDL_RenderTexture(m_renderer->GetSDLRenderer(), m_buttonTextures[2], nullptr, &destRect);
+    } else {
+        // Fallback to colored rectangle
+        m_renderer->DrawRect(backButtonPos, buttonWidth, buttonHeight, Color(255, 192, 203, 255));
+        m_renderer->DrawRect(backButtonPos, buttonWidth, buttonHeight, Color(255, 255, 255, 255), false);
+    }
+    
+    // Draw button text
+    int backTextWidth = 0, backTextHeight = 0;
+    m_renderer->GetTextSize("Back to Menu", &backTextWidth, &backTextHeight);
+    m_renderer->DrawText(backButtonPos + Vector2(buttonWidth / 2.0f - backTextWidth / 2.0f, 
+                                                  buttonHeight / 2.0f - backTextHeight / 2.0f),
+                        "Back to Menu", Color(0, 0, 0, 255));
+    
+    // Rematch button (aqua - index 0)
+    Vector2 rematchButtonPos(buttonStartX + buttonWidth + buttonSpacing, buttonY);
+    if (m_buttonTextures[0] && m_buttonTextureWidths[0] > 0 && m_buttonTextureHeights[0] > 0) {
+        // Calculate scale to maintain aspect ratio
+        float scaleX = buttonWidth / static_cast<float>(m_buttonTextureWidths[0]);
+        float scaleY = buttonHeight / static_cast<float>(m_buttonTextureHeights[0]);
+        float scale = std::min(scaleX, scaleY);
+        
+        // Calculate centered destination rectangle maintaining aspect ratio
+        float scaledWidth = static_cast<float>(m_buttonTextureWidths[0]) * scale;
+        float scaledHeight = static_cast<float>(m_buttonTextureHeights[0]) * scale;
+        float offsetX = (buttonWidth - scaledWidth) * 0.5f;
+        float offsetY = (buttonHeight - scaledHeight) * 0.5f;
+        
+        SDL_FRect destRect = { 
+            rematchButtonPos.x + offsetX, 
+            rematchButtonPos.y + offsetY, 
+            scaledWidth, 
+            scaledHeight 
+        };
+        SDL_RenderTexture(m_renderer->GetSDLRenderer(), m_buttonTextures[0], nullptr, &destRect);
+    } else {
+        // Fallback to colored rectangle
+        m_renderer->DrawRect(rematchButtonPos, buttonWidth, buttonHeight, Color(0, 255, 255, 255));
+        m_renderer->DrawRect(rematchButtonPos, buttonWidth, buttonHeight, Color(255, 255, 255, 255), false);
+    }
+    
+    // Draw button text
+    int rematchTextWidth = 0, rematchTextHeight = 0;
+    m_renderer->GetTextSize("Rematch", &rematchTextWidth, &rematchTextHeight);
+    m_renderer->DrawText(rematchButtonPos + Vector2(buttonWidth / 2.0f - rematchTextWidth / 2.0f,
+                                                     buttonHeight / 2.0f - rematchTextHeight / 2.0f),
+                        "Rematch", Color(0, 0, 0, 255));
+}
 
-    m_renderer->DrawText(centerPos + Vector2(-40, 60), "Press R to Restart", Color(255, 255, 255, 255));
+int UI::GetGameOverButtonClick(const Vector2& mousePos) {
+    if (!m_gameOverActive) return 0;
+    
+    const float buttonWidth = 200.0f;
+    const float buttonHeight = 50.0f;
+    const float buttonSpacing = 30.0f;
+    const float buttonY = 400.0f;
+    const float totalButtonsWidth = buttonWidth * 2.0f + buttonSpacing;
+    const float buttonStartX = 600.0f - totalButtonsWidth / 2.0f;
+    
+    // Check Back to Menu button (pink)
+    Vector2 backButtonPos(buttonStartX, buttonY);
+    if (mousePos.x >= backButtonPos.x && mousePos.x <= backButtonPos.x + buttonWidth &&
+        mousePos.y >= backButtonPos.y && mousePos.y <= backButtonPos.y + buttonHeight) {
+        return 1; // Back to menu clicked
+    }
+    
+    // Check Rematch button (aqua)
+    Vector2 rematchButtonPos(buttonStartX + buttonWidth + buttonSpacing, buttonY);
+    if (mousePos.x >= rematchButtonPos.x && mousePos.x <= rematchButtonPos.x + buttonWidth &&
+        mousePos.y >= rematchButtonPos.y && mousePos.y <= rematchButtonPos.y + buttonHeight) {
+        return 2; // Rematch clicked
+    }
+    
+    return 0; // No button clicked
 }
 
 void UI::DrawPlayerSkills(const Player& player, const Vector2& position) {
@@ -444,10 +625,16 @@ void UI::ShowMessage(const std::string& message, float duration) {
     m_messages.push_back(msg);
 }
 
-void UI::ShowGameOver(int winnerId) {
-    ShowMessage("Game Over!", 10.0f);
-    if (winnerId >= 0) {
-        ShowMessage("Player " + std::to_string(winnerId + 1) + " wins!", 10.0f);
+void UI::ShowGameOver(int winnerId, GameMode gameMode) {
+    // Only activate if there's a valid winner
+    if (winnerId >= -2 && winnerId < 4) {
+        m_gameOverActive = true;
+        m_winnerId = winnerId;
+        m_gameMode = gameMode;
+        m_colorCycleTime = 0.0f;
+        m_currentColorIndex = 0;
+    } else {
+        m_gameOverActive = false;
     }
 }
 
@@ -614,5 +801,31 @@ std::string UI::GetSkillOrbTexturePath(SkillType skillType) const {
         return "../assets/skill_orbs/orb_heal.png";
     default:
         return "";
+    }
+}
+
+void UI::LoadButtonTextures() {
+    // Button texture paths - order: aqua, orange, pink, purple
+    const char* buttonPaths[] = {
+        "../assets/buttons/aqua_button.png",
+        "../assets/buttons/orange_button.png",
+        "../assets/buttons/pink_button.png",
+        "../assets/buttons/purple_button.png"
+    };
+    
+    // Load regular button textures
+    for (int i = 0; i < 4; ++i) {
+        SDL_Surface* surface = IMG_Load(buttonPaths[i]);
+        if (surface) {
+            m_buttonTextureWidths[i] = surface->w;
+            m_buttonTextureHeights[i] = surface->h;
+            m_buttonTextures[i] = SDL_CreateTextureFromSurface(m_renderer->GetSDLRenderer(), surface);
+            SDL_DestroySurface(surface);
+            if (!m_buttonTextures[i]) {
+                std::cerr << "Failed to create button texture " << i << ": " << SDL_GetError() << std::endl;
+            }
+        } else {
+            std::cerr << "Failed to load button texture: " << buttonPaths[i] << " - " << SDL_GetError() << std::endl;
+        }
     }
 }

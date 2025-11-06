@@ -5,6 +5,7 @@
 #include <memory>
 #include "Vector2.h"
 #include "Renderer.h"
+#include "Menu.h"
 #include <SDL3/SDL.h>
 
 class Player;
@@ -46,8 +47,10 @@ public:
     bool HandleMinimapClick(const Vector2& mousePos, float mapWidth, float mapHeight, Vector2& outWorldPos);
 
     void ShowMessage(const std::string& message, float duration = 3.0f);
-    void ShowGameOver(int winnerId);
+    void ShowGameOver(int winnerId, GameMode gameMode);
     void ClearMessages();
+    void SetGameMode(GameMode gameMode) { m_gameMode = gameMode; }
+    int GetGameOverButtonClick(const Vector2& mousePos); // Returns 1 = back to menu, 2 = rematch, 0 = none
 
     void SetTurnTimer(float timer) { m_turnTimer = timer; }
     void SetCurrentPlayer(int playerIndex) { m_currentPlayerIndex = playerIndex; }
@@ -65,6 +68,11 @@ private:
 
     // Skill orb textures (for inventory)
     SDL_Texture* m_skillOrbTextures[static_cast<int>(SkillType::COUNT)];
+    
+    // Button textures (aqua=0, orange=1, pink=2, purple=3)
+    SDL_Texture* m_buttonTextures[4];
+    int m_buttonTextureWidths[4];
+    int m_buttonTextureHeights[4];
 
     // Message system
     struct Message {
@@ -96,8 +104,17 @@ private:
     // Texture loading
     void LoadInventorySlotTexture();
     void LoadSkillOrbTextures();
+    void LoadButtonTextures();
     std::string GetSkillOrbTexturePath(SkillType skillType) const;
 
+    GameMode m_gameMode;
+    
+    // Game over screen state
+    bool m_gameOverActive;
+    int m_winnerId;
+    float m_colorCycleTime;
+    int m_currentColorIndex;
+    
     // Constants
     static constexpr float MESSAGE_DURATION = 3.0f;
     static constexpr float HEALTH_BAR_WIDTH = 120.0f;
