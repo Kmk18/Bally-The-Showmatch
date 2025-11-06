@@ -253,6 +253,7 @@ void UI::DrawControlsHelp() {
     m_renderer->DrawText(helpPos + Vector2(0, 30), "Up/Down: Aim", Color(255, 255, 255, 255));
     m_renderer->DrawText(helpPos + Vector2(0, 45), "Space: Power (Hold)", Color(255, 255, 255, 255));
     m_renderer->DrawText(helpPos + Vector2(0, 60), "1/2/3/4: Select Skills", Color(255, 255, 255, 255));
+    m_renderer->DrawText(helpPos + Vector2(0, 75), "WASD: Move Camera", Color(255, 255, 255, 255));
 }
 
 void UI::DrawInventory(const Player& player, const Vector2& position) {
